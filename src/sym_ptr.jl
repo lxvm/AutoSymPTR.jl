@@ -177,9 +177,9 @@ tuple `(I, E, numevals, rules)` containing the estimated integral, the estimated
 error, the number of integrand evaluations, and a `NamedTuple` of `rules` used
 to compute the PTR on the most refined grid.
 
-!!! note "Convergence depends on periodicity" If the routine takes a long time
-    to return, double check at the period of the function `f` along the basis
-    vectors in the columns of `B` is consistent.
+!!! note "Convergence depends on periodicity"
+    If the routine takes a long time to return, double check at the period of
+    the function `f` along the basis vectors in the columns of `B` is consistent.
 """
 function autosymptr(f, B_::AbstractMatrix{T}, syms=nothing; kwargs...) where T
     d = LinearAlgebra.checksquare(B_)
