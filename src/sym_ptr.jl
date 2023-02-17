@@ -189,33 +189,35 @@ end
 
 function autosymptr_kwargs(f, ::SMatrix{d,d,T}, syms;
     atol=nothing, rtol=nothing, maxevals=typemax(Int64),
-    npt1=npt_update(f, 0), rule1=nothing, npt2=npt_update(f, npt1), rule2=nothing,
+    npt1=nothing, rule1=nothing, npt2=nothing, rule2=nothing,
 ) where {d,T}
+    npt1 = something(npt1, fill(npt_update(f, 0)))
+    npt2 = something(npt2, fill(npt_update(f, only(npt1))))
     nsyms = isnothing(syms) ? 1 : length(syms)
-    (npt1^d + npt2^d)/nsyms ≥ maxevals && throw(ArgumentError("initial npts exceeds maxevals=$maxevals"))
+    (npt1[]^d + npt2[]^d)/nsyms ≥ maxevals && throw(ArgumentError("initial npts exceeds maxevals=$maxevals"))
     atol_ = something(atol, zero(T))/nsyms # rescale tolerance to correct for symmetrization
     rtol_ = something(rtol, iszero(atol_) ? sqrt(eps(T)) : zero(T))
-    (npt1=npt1, rule1=something(rule1, ptr(npt1, f, Val(d), T, syms)),
-     npt2=npt2, rule2=something(rule2, ptr(npt2, f, Val(d), T, syms)),
+    (npt1=npt1, rule1=something(rule1, ptr(npt1[], f, Val(d), T, syms)),
+     npt2=npt2, rule2=something(rule2, ptr(npt2[], f, Val(d), T, syms)),
      atol=atol_, rtol=rtol_, maxevals=maxevals)
 end
 
 function autosymptr_(f, B::SMatrix{d,d,T}, syms, npt1, rule1, npt2, rule2, atol, rtol, maxevals) where {d,T}
     numevals = length(rule1.x) + length(rule2.x)
     numevals ≥ maxevals && throw(ArgumentError("initial npts exceeds maxevals=$maxevals"))
-    int1 = evalptr(rule1, npt1, f, B, syms)
-    int2 = evalptr(rule2, npt2, f, B, syms)
+    int1 = evalptr(rule1, npt1[], f, B, syms)
+    int2 = evalptr(rule2, npt2[], f, B, syms)
     err = norm(int1 - int2)
     while true
         (err ≤ max(rtol*norm(int2), atol) || numevals ≥ maxevals || !isfinite(err)) && break
         # update coarse result with finer result
         int1 = int2
-        npt1 = npt2
+        npt1[] = npt2[]
         ptrcopy!(rule1, rule2)
         # evaluate integral on finer grid
-        npt2 = npt_update(f, npt1)
-        ptr!(rule2, npt2, f, Val(d), T, syms)
-        int2 = evalptr(rule2, npt2, f, B, syms)
+        npt2[] = npt_update(f, npt1[])
+        ptr!(rule2, npt2[], f, Val(d), T, syms)
+        int2 = evalptr(rule2, npt2[], f, B, syms)
         numevals += length(rule2.x)
         # self-convergence error estimate
         err = norm(int1 - int2)
@@ -242,8 +244,7 @@ struct PTRGrid{N,T}
     end
 end
 
-Base.ndims(::T) where {T<:PTRGrid} = ndims(T)
-Base.ndims(::Type{PTRGrid{N,T}}) where {N,T} = N
+Base.ndims(::PTRGrid{N,T}) where {N,T} = N
 Base.eltype(::Type{PTRGrid{N,T}}) where {N,T} = SVector{N,T}
 Base.length(p::PTRGrid) = length(p.x)^ndims(p)
 Base.size(p::PTRGrid) = (l=length(p.x); ntuple(n->l, Val(ndims(p))))
