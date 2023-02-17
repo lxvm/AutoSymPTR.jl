@@ -147,15 +147,14 @@ function ptrcopy!(rule1, rule2)
 end
 
 """
-    symptr(f, B::AbstractMatrix, syms=nothing;
-    npt=npt_update(f,0), rule=ptr(npt,f,B,syms))
+    symptr(f, B::AbstractMatrix, syms=nothing; npt=npt_update(f,0), rule=ptr(npt,f,B,syms))
 
 Computes an `npt` symmetrized PTR rule of `f` on a unit hypercube in basis `B`
 and returns a tuple `(I, rules)` the integral, `I`, and the PTR `rules` used.
 Optionally uses a precomputed keyword `rule`.
 """
 function symptr(f, B_::AbstractMatrix{T}, syms=nothing; kwargs...) where T
-    d = LinearAlgebra.checksquare(B_)
+    d = checksquare(B_)
     B = convert(SMatrix{d,d,float(T),d^2}, B_)
     symptr_(f, B, syms, symptr_kwargs(f, B, syms; kwargs...)...)
 end
@@ -182,7 +181,7 @@ to compute the PTR on the most refined grid.
     the function `f` along the basis vectors in the columns of `B` is consistent.
 """
 function autosymptr(f, B_::AbstractMatrix{T}, syms=nothing; kwargs...) where T
-    d = LinearAlgebra.checksquare(B_)
+    d = checksquare(B_)
     B = convert(SMatrix{d,d,float(T),d^2}, B_)
     autosymptr_(f, B, syms, autosymptr_kwargs(f, B, syms; kwargs...)...)
 end

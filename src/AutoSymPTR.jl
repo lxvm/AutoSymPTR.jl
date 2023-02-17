@@ -13,8 +13,8 @@ which is nontrivial in cases with non-scalar integrands. A simple example is
 """
 module AutoSymPTR
 
-using LinearAlgebra
-using StaticArrays
+using LinearAlgebra: norm, det, checksquare
+using StaticArrays: SVector, SMatrix
 
 export symptr, autosymptr # main routines
 include("sym_ptr.jl")
