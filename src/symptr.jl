@@ -27,7 +27,7 @@ symptr_rule(::Type{T}, npt, ::Val{d}, syms) where {d,T} =
     symptr_rule!(symptr_rule(T, Val(d)), npt, Val(d), syms)
 
 """
-    symptr_rule!(rule, npt, ::Val{d}, ::Type{T}, syms) where {d,T}
+    symptr_rule!(rule, npt, ::Val{d}, syms) where {d,T}
 """
 function symptr_rule!(rule::SymPTRRule, npt, ::Val{d}, syms) where d
     flag, wsym, nsym = symptr_rule(npt, Val(d), syms)
