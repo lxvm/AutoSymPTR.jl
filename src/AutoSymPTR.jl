@@ -56,7 +56,11 @@ function do_autosymptr(f, B, ::Val{d}, (; npt1, rule1, npt2, rule2), atol, rtol,
     err = nrm(int1 - int2)
 
     while true
-        (err ≤ max(rtol*nrm(int2), atol) || numevals ≥ maxevals || !isfinite(err)) && break
+        (err ≤ max(rtol*nrm(int2), atol) || !isfinite(err)) && break
+        if numevals ≥ maxevals
+            @warn "maxevals exceeded during convergence"
+            return int2, err
+        end
         # update coarse result with finer result
         int1 = int2
         npt1[] = npt2[]
@@ -69,7 +73,7 @@ function do_autosymptr(f, B, ::Val{d}, (; npt1, rule1, npt2, rule2), atol, rtol,
         # self-convergence error estimate
         err = nrm(int1 - int2)
     end
-    return int2, err, numevals
+    return int2, err
 end
 
 
