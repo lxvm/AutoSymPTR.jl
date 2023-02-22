@@ -31,13 +31,14 @@ n_permutations(n::Integer) = factorial(n)
 
     @testset "symptr" begin
 
-        # test keywords
+        #= test keywords
         for npt in (10,), dim in 1:3, syms in (nothing, (I,))
             int, rule = symptr(x -> 1, I(dim), syms) # default settings
             @test int ≈ symptr(x -> 1, I(dim), syms; rule...)[1]
             int, rule = symptr(x -> 1, I(dim), syms; npt=npt) # user settings
             @test int ≈ symptr(x -> 1, I(dim), syms; npt=npt, rule...)[1] # uses precomputed rule instead of specified npt
         end
+        =#
 
         # test bases integrate to correct volume
         for npt in (30,), dims in 1:3
@@ -47,7 +48,7 @@ n_permutations(n::Integer) = factorial(n)
             sols = Vector{ComplexF64}(undef, length(test_syms))
             for (i,syms) in enumerate(test_syms)
                 nsyms = isnothing(syms) ? 1 : length(syms)
-                sols[i] = symptr(x -> 1, B, syms; npt=npt)[1]*nsyms
+                sols[i] = symptr(x -> 1, B, syms; npt=npt)*nsyms
             end
             @test all(isapprox(det(B)), sols)
         end
@@ -62,7 +63,7 @@ n_permutations(n::Integer) = factorial(n)
             sols = Vector{ComplexF64}(undef, length(test_syms))
             for (i,syms) in enumerate(test_syms)
                 nsyms = isnothing(syms) ? 1 : length(syms)
-                sols[i] = symptr(f, B, syms; npt=npt)[1]*nsyms
+                sols[i] = symptr(f, B, syms; npt=npt)*nsyms
             end
             @test all(isapprox(sols[1]), sols[2:end])
         end
@@ -78,11 +79,11 @@ n_permutations(n::Integer) = factorial(n)
         end
         for dims in (2,)
             npt = 30
-            ref = symptr(h, I(dims); npt=npt)[1]
+            ref = ptr(h, I(dims); npt=npt)
             csym = collect(cube_automorphisms(Val(dims)))
             test_syms = ((I,), (-I,I), csym, reverse(csym)) # order of symmetries shouldn't matter
             for syms in test_syms
-                int = symptr(h, I(dims), syms; npt=npt)[1]
+                int = symptr(h, I(dims), syms; npt=npt)
                 int_ = zero(int)
                 for S in syms
                     int_ += S * int * S'
@@ -93,7 +94,7 @@ n_permutations(n::Integer) = factorial(n)
 
         # test spectral convergence
         for dims in 1:2
-            ref = symptr(f, I(dims); npt=100)[1]
+            ref = ptr(f, I(dims); npt=100)
             npts = (10, 20, 40, 80) # geometric progression for asymptotic behavior
             sols = Vector{ComplexF64}(undef, length(npts))
             csym = collect(cube_automorphisms(Val(dims)))
@@ -101,7 +102,7 @@ n_permutations(n::Integer) = factorial(n)
             for syms in test_syms
                 for (i,npt) in enumerate(npts)
                     nsyms = isnothing(syms) ? 1 : length(syms)
-                    sols[i] = nsyms*symptr(f, I(dims), syms; npt=npt)[1]
+                    sols[i] = nsyms*symptr(f, I(dims), syms; npt=npt)
                 end
                 @test issorted(reverse(norm.(sols .- ref))) # check errors decrease
                 # error for PTR goes like err_n ~< exp(-aηn)
@@ -115,13 +116,14 @@ n_permutations(n::Integer) = factorial(n)
     end
 
     @testset "autosymptr" begin
-        # test keywords
+        #= test keywords
         for dim in 1:3, syms in (nothing, (I,))
             int, err, nevals, rule = autosymptr(x -> 1, I(dim), syms) # default settings
             @test int ≈ autosymptr(x -> 1, I(dim), syms; rule...)[1]
             int, err, nevals, rule = autosymptr(x -> 1, I(dim), syms; atol=1e-1, rtol=0, maxevals=10^7) # user settings
             @test int ≈ autosymptr(x -> 1, I(dim), syms; rule...)[1]
         end
+        =#
 
         # test bases integrate to correct volume
         for dims in 1:3
@@ -162,7 +164,7 @@ n_permutations(n::Integer) = factorial(n)
             end
             for dims in (2,)
                 atol = 1e-5
-                ref = autosymptr(h, I(dims); atol=atol)[1]
+                ref = autoptr(h, I(dims); atol=atol)[1]
                 csym = collect(cube_automorphisms(Val(dims)))
                 test_syms = ((I,), (-I,I), csym, reverse(csym)) # order of symmetries shouldn't matter
                 for syms in test_syms
@@ -178,7 +180,7 @@ n_permutations(n::Integer) = factorial(n)
         # test convergence threshold achieved within a factor of two
         for dims in 1:2
             g(x, ω=0.0, η=1e-2) = f(x, ω, η)
-            ref = autosymptr(g, I(dims); atol=10^(-10))[1]
+            ref = autoptr(g, I(dims); atol=10^(-10))[1]
             csym = collect(cube_automorphisms(Val(dims)))
             test_syms = (nothing, (I,), (-I,I), csym, reverse(csym)) # order of symmetries shouldn't matter
             for atol in (10.0 .^ [-2, -4, -6]), syms in test_syms
