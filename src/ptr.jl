@@ -77,5 +77,5 @@ function ptr(f, B::AbstractMatrix; npt=npt_update(f, 0), rule=nothing)
     d = checksquare(B); T = float(eltype(B))
     rule_ = (rule===nothing) ? ptr_rule!(PTRRule(T, Val(d)), npt, Val(d)) : rule
     int = sum(x -> f(B*x), rule_)
-    int * det(B)/npt^d
+    int * abs(det(B))/npt^d
 end
