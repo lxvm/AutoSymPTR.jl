@@ -91,7 +91,7 @@ under the action of the symmetries.
     If the routine takes a long time to return, double check at the period of
     the function `f` along the basis vectors in the columns of `B` is consistent.
 """
-function autosymptr(f, B::AbstractMatrix, syms, rule=symptr_rule; atol=nothing, rtol=nothing, maxevals=typemax(Int64), norm=norm, buffer=nothing)
+function autosymptr(f, B::AbstractMatrix, syms, rule=SymPTRRule; atol=nothing, rtol=nothing, maxevals=typemax(Int64), norm=norm, buffer=nothing)
     d = checksquare(B); T = float(eltype(B))
     nsyms = (syms===nothing) ? 1 : length(syms)
     atol_ = (atol===nothing) ? zero(T) : atol/nsyms # rescale tolerance to correct for symmetrization
@@ -126,9 +126,9 @@ Same as [`autosymptr`](@ref) with trivial symmetries.
 """
 autoptr(f, B; kwargs...) = autosymptr(f, B, nothing; kwargs...)
 autosymptr(f, B::AbstractMatrix, ::Nothing; kwargs...) =
-    autosymptr(f, B, nothing, ptr_rule; kwargs...)
+    autosymptr(f, B, nothing, PTRRule; kwargs...)
 
 autoptr_buffer(::Type{T}, ::Val{d}) where {T,d} =
-    autosymptr_buffer(T, Val(d), ptr_rule)
+    autosymptr_buffer(T, Val(d), PTRRule)
 
 end

@@ -12,19 +12,11 @@ function Base.copy!(r::T, s::T) where {T<:SymPTRRule}
     r
 end
 
-function symptr_rule(::Type{T}, ::Val{d}) where {T,d}
+function SymPTRRule(::Type{T}, ::Val{d}) where {T,d}
     x = Vector{SVector{d,T}}(undef, 0)
     w = Vector{Int}(undef, 0)
     SymPTRRule(x, w)
 end
-
-"""
-    symptr_rule(::Type{T}, npt, ::Val{d}, syms) where {d,T}
-
-Symmetry version of [`ptr_rule`](@ref)
-"""
-symptr_rule(::Type{T}, npt, ::Val{d}, syms) where {d,T} =
-    symptr_rule!(symptr_rule(T, Val(d)), npt, Val(d), syms)
 
 """
     symptr_rule!(rule, npt, ::Val{d}, syms) where {d,T}
@@ -94,7 +86,7 @@ remap to the full domain
 """
 function symptr(f, B::AbstractMatrix, syms; npt=npt_update(f, 0), rule=nothing)
     d = checksquare(B); T = float(eltype(B))
-    rule_ = (rule===nothing) ? symptr_rule(T,npt,Val(d),syms) : rule
+    rule_ = (rule===nothing) ? symptr_rule!(SymPTRRule(T, Val(d)), npt, Val(d), syms) : rule
     int = mapreduce((w, x) -> w*f(B*x), +, rule_.w, rule_.x)
     int * det(B)/npt^d/length(syms)
 end
