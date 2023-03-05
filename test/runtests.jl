@@ -50,7 +50,7 @@ n_permutations(n::Integer) = factorial(n)
                 nsyms = isnothing(syms) ? 1 : length(syms)
                 sols[i] = symptr(x -> 1, B, syms; npt=npt)*nsyms
             end
-            @test all(isapprox(det(B)), sols)
+            @test all(isapprox(abs(det(B))), sols)
         end
 
         f(x, ω=0.0, η=1e-1) =
@@ -135,7 +135,7 @@ n_permutations(n::Integer) = factorial(n)
                 nsyms = isnothing(syms) ? 1 : length(syms)
                 sols[i] = autosymptr(x -> 1, B, syms)[1]*nsyms
             end
-            @test all(isapprox(det(B)), sols)
+            @test all(isapprox(abs(det(B))), sols)
         end
 
         f(x, ω=0.0, η=1.0) =
