@@ -37,7 +37,8 @@ include("symptr.jl")
 
 
 # this is the PTR convergence loop
-function do_autosymptr(f, B, ::Val{d}, (; npt1, rule1, npt2, rule2), atol, rtol, maxevals, nrm, syms) where d
+function do_autosymptr(f, B, ::Val{d}, buf, atol, rtol, maxevals, nrm, syms) where d
+    npt1 = buf.npt1; rule1 = buf.rule1; npt2 = buf.npt2; rule2 = buf.rule2
     nsyms = (syms===nothing) ? 1 : length(syms)
 
     if (numevals = length(rule1) + length(rule2)) == 0
