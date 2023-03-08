@@ -59,7 +59,7 @@ Returns `flag`, `wsym`, and `nsym` containing a mask for the nodes of an
             x_i = Base.Cartesian.@ncall $N SVector{$N,Float64} k -> x[i_k]
             xsym = S * x_i
             Base.Cartesian.@nexprs $N k -> begin
-                ii_k = 0.5npt * (xsym[k] + 1.0) + 1.0
+                ii_k = 0.5npt * mod(xsym[k] + 1.0, 2.0) + 1.0
                 iii_k = round(Int, ii_k)
                 (iii_k - ii_k) > 1e-12 && throw("Inexact index")
             end
