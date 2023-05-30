@@ -101,6 +101,11 @@ function autosymptr(f, B::AbstractMatrix, syms, rule=SymPTRRule; atol=nothing, r
     do_autosymptr(f, B, Val(d), buffer_, atol_, rtol_, maxevals, norm, syms)
 end
 
+alloc_rule(::Val{N}, ::Type{T}, ::Nothing, npt::Int) where {N,T} =
+    ptr_rule!(PTRRule(T, Val(N)), npt, Val(N))
+alloc_rule(::Val{N}, ::Type{T}, syms, npt::Int) where {N,T}=
+    symptr_rule!(SymPTRRule(T, Val(N)), npt, Val(N), syms)
+
 """
     alloc_autobuffer(::Type{T}, ::Val{d}, rule)
 
