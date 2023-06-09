@@ -16,40 +16,39 @@ Base.iterate(rule::MonkhorstPack, args...) = iterate(rule.wx, args...)
 Base.length(rule::MonkhorstPack) = length(rule.wx)
 
 """
-    symptr_rule(::Val{d}, npt, syms) where d
+    symptr_rule(npt, ::Val{d}, syms) where d
 
 Returns `flag`, `wsym`, and `nsym` containing a mask for the nodes of an
 `npt` symmetrized PTR quadrature ptr, and the corresponding integer weights
 (see Algorithm 3. in [Kaye et al.](http://arxiv.org/abs/2211.12959)).
 """
-@generated function symptr_rule(npt::Int, ::Val{N}, syms) where N
-    quote
+function symptr_rule(npt::Int, ::Val{N}, syms) where N
     x = range(-1, 1, length=npt+1)[1:npt]
     nsym = 0
-    wsym = Vector{Int}(undef, npt^$N)
-    flag = ones(Bool, Base.Cartesian.@ntuple $N _ -> npt)
-    Base.Cartesian.@nloops $N i flag begin
-        (Base.Cartesian.@nref $N flag i) || continue
+    wsym = Vector{Int}(undef, npt^N)
+    flag = ones(Bool, ntuple(_ -> npt, Val(N)))
+    for i in CartesianIndices(flag)
+        flag[i] || continue
         nsym += 1
         wsym[nsym] = 1
         for S in syms
-            x_i = Base.Cartesian.@ncall $N SVector{$N,Float64} k -> x[i_k]
+            x_i = SVector{N,Float64}(ntuple(k -> x[i.I[k]], Val(N)))
             xsym = S * x_i
-            Base.Cartesian.@nexprs $N k -> begin
+            iii = CartesianIndex(ntuple(Val(N)) do k
                 ii_k = 0.5npt * mod(xsym[k] + 1.0, 2.0) + 1.0
                 iii_k = round(Int, ii_k)
                 (iii_k - ii_k) > 1e-12 && throw("Inexact index")
-            end
-            (Base.Cartesian.@nany $N k -> (iii_k > npt)) && continue
-            (Base.Cartesian.@nall $N k -> (iii_k == i_k)) && continue
-            if (Base.Cartesian.@nref $N flag iii)
-                (Base.Cartesian.@nref $N flag iii) = false
+                return iii_k
+            end)
+            any(>(npt), iii.I) && continue
+            i == iii && continue
+            if flag[iii]
+                flag[iii] = false
                 wsym[nsym] += 1
             end
         end
     end
     return flag, wsym, nsym
-    end
 end
 
 # rule interface
