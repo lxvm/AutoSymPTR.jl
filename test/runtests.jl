@@ -2,8 +2,10 @@ using LinearAlgebra
 using Test
 
 using StaticArrays
+using FFTW
 
 using AutoSymPTR
+using AutoSymPTR: Basis, PTR, MonkhorstPack, pquadrature
 
 """
     cube_automorphisms(d::Integer)
@@ -29,126 +31,249 @@ n_permutations(n::Integer) = factorial(n)
 
 @testset "AutoSymPTR" begin
 
-    @testset "symptr" begin
-
-        #= test keywords
-        for npt in (10,), dim in 1:3, syms in (nothing, (I,))
-            int, rule = symptr(x -> 1, I(dim), syms) # default settings
-            @test int ≈ symptr(x -> 1, I(dim), syms; rule...)[1]
-            int, rule = symptr(x -> 1, I(dim), syms; npt=npt) # user settings
-            @test int ≈ symptr(x -> 1, I(dim), syms; npt=npt, rule...)[1] # uses precomputed rule instead of specified npt
-        end
-        =#
-
-        # test bases integrate to correct volume
-        for npt in (30,), dims in 1:3
-            B = rand(dims,dims)
-            csym = collect(cube_automorphisms(Val(dims)))
-            test_syms = (nothing, (I,), (-I,I), csym, reverse(csym)) # order of symmetries shouldn't matter
-            sols = Vector{ComplexF64}(undef, length(test_syms))
-            for (i,syms) in enumerate(test_syms)
-                nsyms = isnothing(syms) ? 1 : length(syms)
-                sols[i] = symptr(x -> 1, B, syms; npt=npt)*nsyms
-            end
-            @test all(isapprox(abs(det(B))), sols)
-        end
-
-        f(x, ω=0.0, η=1e-1) =
-            inv(complex(ω-mapreduce(y -> cospi(2y), +, x), η))
-        # test symmetries for scalar integrand
-        for npt in (30,), dims in 1:3
-            B = I(dims)
-            csym = collect(cube_automorphisms(Val(dims)))
-            test_syms = (nothing, (I,), (-I,I), csym, reverse(csym)) # order of symmetries shouldn't matter
-            sols = Vector{ComplexF64}(undef, length(test_syms))
-            for (i,syms) in enumerate(test_syms)
-                nsyms = isnothing(syms) ? 1 : length(syms)
-                sols[i] = symptr(f, B, syms; npt=npt)*nsyms
-            end
-            @test all(isapprox(sols[1]), sols[2:end])
-        end
-
-        # test symmetries for matrix integrand
-        # a test matrix with inversion and 4-fold rotation symmetry
-        function h(k, t1=0.44, t2=0.13, t3=0.08)
-            kx, ky = k
-            h11 = -2*t1*(cospi(2kx) + cospi(2ky))
-            h21 = t3*sinpi(2kx)*sinpi(2ky)
-            h22 = -2*t2*(cospi(2kx) + cospi(2ky))
-            SHermitianCompact{2,Float64,3}(SVector{3,Float64}(h11,h21,h22))
-        end
-        for dims in (2,)
-            npt = 30
-            ref = ptr(h, I(dims); npt=npt)
-            csym = collect(cube_automorphisms(Val(dims)))
-            test_syms = ((I,), (-I,I), csym, reverse(csym)) # order of symmetries shouldn't matter
-            for syms in test_syms
-                int = symptr(h, I(dims), syms; npt=npt)
-                int_ = zero(int)
-                for S in syms
-                    int_ += S * int * S'
-                end
-                @test norm(ref - int_) < 1e-10
+    @testset "PTR" begin
+        @testset "volume" begin
+            f(x) = 1.0
+            buffer = Float64[]
+            for npt in (30,), dims in 1:3
+                B = rand(dims,dims)
+                dom = Basis(B)
+                rule = PTR(Float64, Val(dims), npt)
+                @test abs(det(B)) ≈ rule(f, dom) ≈ rule(f, dom, buffer)
             end
         end
 
-        # test spectral convergence
-        for dims in 1:2
-            ref = ptr(f, I(dims); npt=100)
-            npts = (10, 20, 40, 80) # geometric progression for asymptotic behavior
-            sols = Vector{ComplexF64}(undef, length(npts))
-            csym = collect(cube_automorphisms(Val(dims)))
-            test_syms = (nothing, (I,), (-I,I), csym, reverse(csym)) # order of symmetries shouldn't matter
-            for syms in test_syms
+        @testset "oscillations" begin
+            f(x) = 1.0 + sum(cos, x)
+            buffer = Float64[]
+            for npt in (30,), dims in 1:3
+                B = 2pi*I(dims)
+                dom = Basis(B)
+                rule = PTR(Float64, Val(dims), npt)
+                @test abs(det(B)) ≈ rule(f, dom) ≈ rule(f, dom, buffer)
+            end
+        end
+
+        @testset "convergence" begin
+            f(x, ω=0.3, η=1e-1) = inv(complex(ω-mapreduce(y -> cospi(2y), +, x), η))
+            for dims in 1:2
+                dom = Basis(I(dims))
+                ref = PTR(Float64, Val(dims), 100)(f, dom)
+                npts = (10, 20, 40, 80) # geometric progression for asymptotic behavior
+                sols = Vector{ComplexF64}(undef, length(npts))
                 for (i,npt) in enumerate(npts)
-                    nsyms = isnothing(syms) ? 1 : length(syms)
-                    sols[i] = nsyms*symptr(f, I(dims), syms; npt=npt)
+                    sols[i] =  PTR(Float64, Val(dims), npt)(f, dom)
                 end
                 @test issorted(reverse(norm.(sols .- ref))) # check errors decrease
                 # error for PTR goes like err_n ~< exp(-aηn)
                 lerr = log10.(norm.(sols .- ref))
-                 # check that the rate of convergence is steady
+                # check that the rate of convergence is steady
                 @test (lerr[3]-lerr[1])/(npts[3]-npts[1]) ≈ (lerr[4]-lerr[2])/(npts[4]-npts[2]) atol=1e-2
             end
+        end
+    end
 
+    @testset "MonkhorstPack" begin
+        @testset "volume" begin
+            f(x) = 1.0
+            buffer = Float64[]
+            for npt in (30,), dims in 1:3
+                B = rand(dims,dims)
+                dom = Basis(B)
+                csym = collect(cube_automorphisms(Val(dims)))
+                test_syms = ((I,), (-I,I), csym, reverse(csym)) # order of symmetries shouldn't matter
+                sols = Vector{Float64}(undef, 2*length(test_syms))
+                for (i,syms) in enumerate(test_syms)
+                    rule = MonkhorstPack(Float64, Val(dims), npt, syms)
+                    nsyms = isnothing(syms) ? 1 : length(syms)
+                    sols[2i-1] = rule(f, dom)*nsyms
+                    sols[2i] = rule(f, dom, buffer)*nsyms
+                end
+                @test all(isapprox(abs(det(B))), sols)
+            end
+        end
+
+        @testset "oscillations" begin
+            f(x) = 1.0 + sum(cos, x)
+            buffer = Float64[]
+            for npt in (30,), dims in 1:3
+                B = 2pi*I(dims)
+                dom = Basis(B)
+                csym = collect(cube_automorphisms(Val(dims)))
+                test_syms = ((I,), (-I,I), csym, reverse(csym)) # order of symmetries shouldn't matter
+                sols = Vector{Float64}(undef, 2*length(test_syms))
+                for (i,syms) in enumerate(test_syms)
+                    rule = MonkhorstPack(Float64, Val(dims), npt, syms)
+                    sols[2i-1] = rule(f, dom)*length(syms)
+                    sols[2i] = rule(f, dom, buffer)*length(syms)
+                end
+                @test all(isapprox(abs(det(B))), sols)
+            end
+        end
+
+        @testset "convergence" begin
+            f(x, ω=0.0, η=1e-1) = inv(complex(ω-mapreduce(y -> cospi(2y), +, x), η))
+            for dims in 1:2
+                dom = Basis(I(dims))
+                ref = PTR(Float64, Val(dims), 100)(f, dom)
+                npts = (10, 20, 40, 80) # geometric progression for asymptotic behavior
+                sols = Vector{ComplexF64}(undef, length(npts))
+                csym = collect(cube_automorphisms(Val(dims)))
+                test_syms = ((I,), (-I,I), csym, reverse(csym)) # order of symmetries shouldn't matter
+                for syms in test_syms
+                    for (i,npt) in enumerate(npts)
+                        sols[i] = length(syms)*MonkhorstPack(Float64, Val(dims), npt, syms)(f, dom)
+                    end
+                    @test issorted(reverse(norm.(sols .- ref))) # check errors decrease
+                    # error for PTR goes like err_n ~< exp(-aηn)
+                    lerr = log10.(norm.(sols .- ref))
+                    # check that the rate of convergence is steady
+                    @test (lerr[3]-lerr[1])/(npts[3]-npts[1]) ≈ (lerr[4]-lerr[2])/(npts[4]-npts[2]) atol=1e-2
+                end
+            end
+        end
+
+
+        @testset "symmetry" begin
+            f(x, ω=0.0, η=1e-1) =
+                inv(complex(ω-mapreduce(y -> cospi(2y), +, x), η))
+            # test symmetries for scalar integrand
+            for npt in (30,), dims in 1:3
+                dom = Basis(I(dims))
+                csym = collect(cube_automorphisms(Val(dims)))
+                ref = PTR(Float64, Val(dims), npt)(f, dom)
+                test_syms = ((I,), (-I,I), csym, reverse(csym)) # order of symmetries shouldn't matter
+                sols = Vector{ComplexF64}(undef, length(test_syms))
+                for (i,syms) in enumerate(test_syms)
+                    sols[i] = MonkhorstPack(Float64, Val(dims), npt, syms)(f, dom)*length(syms)
+                end
+                @test all(isapprox(ref), sols)
+            end
+
+            # test symmetries for matrix integrand
+            # a test matrix with inversion and 4-fold rotation symmetry
+            function h(k, t1=0.44, t2=0.13, t3=0.08)
+                kx, ky = k
+                h11 = -2*t1*(cospi(2kx) + cospi(2ky))
+                h21 = t3*sinpi(2kx)*sinpi(2ky)
+                h22 = -2*t2*(cospi(2kx) + cospi(2ky))
+                SHermitianCompact{2,Float64,3}(SVector{3,Float64}(h11,h21,h22))
+            end
+            for dims in (2,)
+                npt = 30
+                dom = Basis(I(dims))
+                ref = PTR(Float64, Val(dims), npt)(h, dom)
+                csym = collect(cube_automorphisms(Val(dims)))
+                test_syms = ((I,), (-I,I), csym, reverse(csym)) # order of symmetries shouldn't matter
+                for syms in test_syms
+                    int = MonkhorstPack(Float64, Val(dims), npt, syms)(h, dom)*length(syms)
+                    int_ = zero(int)
+                    for S in syms
+                        int_ += S * int * S'
+                    end
+                    @test norm(ref - int_) < 1e-10
+                end
+            end
         end
 
     end
 
-    @testset "autosymptr" begin
-        #= test keywords
-        for dim in 1:3, syms in (nothing, (I,))
-            int, err, nevals, rule = autosymptr(x -> 1, I(dim), syms) # default settings
-            @test int ≈ autosymptr(x -> 1, I(dim), syms; rule...)[1]
-            int, err, nevals, rule = autosymptr(x -> 1, I(dim), syms; atol=1e-1, rtol=0, maxevals=10^7) # user settings
-            @test int ≈ autosymptr(x -> 1, I(dim), syms; rule...)[1]
+    @testset "pquadrature" begin
+        struct HyperCube{d,T}
+            a::SVector{d,T}
+            b::SVector{d,T}
         end
-        =#
+        endpoints(c::HyperCube) = (c.a, c.b)
+        Base.ndims(::HyperCube{d}) where {d} = d
+        Base.eltype(::Type{HyperCube{d,T}}) where {d,T} = T
 
+        chebpoints(T, order, dim) = map(n -> T(cospi(n/order)), 0:order)
+        # make a new quadrature rule to test (very similar to PTR)
+        # based on a tensor product of Clenshaw Curtis rules
+        # only works for scalar integrands
+        struct ClenshawCurtis{d,T}
+            x::NTuple{d,Vector{T}}
+        end
+        function ClenshawCurtis(::Type{T}, ::Val{d}, order=16) where {T,d}
+            pts = chebpoints.(T, order, 1:d)
+            return ClenshawCurtis(tuple(pts...))
+        end
+        AutoSymPTR.countevals(rule::ClenshawCurtis) = prod(length, rule.x)
+        function AutoSymPTR.nextrule(rule::ClenshawCurtis{d,T}, ::Type{ClenshawCurtis}) where {d,T}
+            return ClenshawCurtis(T, Val(d), 2 .* length.(rule.x))
+        end
+
+        function (rule::ClenshawCurtis{d,T})(f, dom, buffer=nothing) where {d,T}
+            a, b = endpoints(dom)
+            c = (b - a)/2
+            x = Iterators.product(rule.x...)
+            vals = map(y -> f(c.*(SVector{d,T}(y)+ones(SVector{d,T}))+a), x)
+            kind = map(n -> n > 1 ? FFTW.REDFT00 : FFTW.DHT, size(vals))
+            FFTW.r2r!(vals, kind)
+
+            # renormalize the result to obtain the conventional
+            # Chebyshev-polnomial coefficients
+            s = size(vals)
+            vals ./= prod(map(n -> n > 1 ? 2(n-1) : 1, s))
+            for dim = 1:d
+                # normalization to Chebyshev coefficients
+                if size(vals, dim) > 1
+                    idx = CartesianIndices(ntuple(i -> i == dim ? (2:s[i]-1) : (1:s[i]), Val{d}()))
+                    vals[idx] .*= 2
+                end
+                # quadrature rule
+                preI = CartesianIndices(axes(vals)[1:dim-1])
+                sufI = CartesianIndices(axes(vals)[dim+1:d])
+                for i in axes(vals, dim)
+                    vals[preI, i, sufI] .*=  isodd(i) ? 2/(1 - (i-1)^2) : 0
+                end
+            end
+            return sum(vals) * abs(prod(c))
+        end
+
+        @testset "volume" begin
+            f(x) = 1.0
+            for dims in 1:3
+                dom = HyperCube(rand(SVector{dims,Float64}), rand(SVector{dims,Float64}))
+                I, = pquadrature(f, dom, ClenshawCurtis)
+                @test I ≈ abs(prod(dom.a-dom.b))
+            end
+        end
+
+        @testset "polynomials" begin
+
+        end
+
+        @testset "convergence" begin
+
+        end
+    end
+
+    @testset "autosymptr" begin
         # test bases integrate to correct volume
         for dims in 1:3
-            B = rand(dims,dims)
+            B = Basis(rand(dims,dims))
             csym = collect(cube_automorphisms(Val(dims)))
             test_syms = (nothing, (I,), (-I,I), csym, reverse(csym)) # order of symmetries shouldn't matter
             sols = Vector{ComplexF64}(undef, length(test_syms))
             for (i,syms) in enumerate(test_syms)
                 nsyms = isnothing(syms) ? 1 : length(syms)
-                sols[i] = autosymptr(x -> 1, B, syms)[1]*nsyms
+                sols[i] = autosymptr(x -> 1, B, syms = syms)[1]*nsyms
             end
-            @test all(isapprox(abs(det(B))), sols)
+            @test all(isapprox(abs(det(B.B))), sols)
         end
 
         f(x, ω=0.0, η=1.0) =
             inv(complex(ω-mapreduce(y -> cospi(2y), +, x), η))
         # test symmetries for scalar integrand
         for dims in 1:3
-            B = I(dims)
+            B = Basis(I(dims))
             csym = collect(cube_automorphisms(Val(dims)))
             test_syms = (nothing, (I,), (-I,I), csym, reverse(csym)) # order of symmetries shouldn't matter
             sols = Vector{ComplexF64}(undef, length(test_syms))
             for (i,syms) in enumerate(test_syms)
                 nsyms = isnothing(syms) ? 1 : length(syms)
-                sols[i] = autosymptr(f, B, syms)[1]*nsyms
+                sols[i] = autosymptr(f, B, syms = syms)[1]*nsyms
             end
             @test all(isapprox(sols[1]), sols[2:end])
         end
@@ -164,11 +289,12 @@ n_permutations(n::Integer) = factorial(n)
             end
             for dims in (2,)
                 atol = 1e-5
-                ref = autoptr(h, I(dims); atol=atol)[1]
+                dom = Basis(I(dims))
+                ref = autosymptr(h, dom; abstol=atol)[1]
                 csym = collect(cube_automorphisms(Val(dims)))
                 test_syms = ((I,), (-I,I), csym, reverse(csym)) # order of symmetries shouldn't matter
                 for syms in test_syms
-                    int = autosymptr(h, I(dims), syms; atol=atol)[1]
+                    int = autosymptr(h, dom, syms = syms, abstol=atol)[1]
                     int_ = zero(int)
                     for S in syms
                         int_ += S * int * S'
@@ -180,15 +306,16 @@ n_permutations(n::Integer) = factorial(n)
         # test convergence threshold achieved within a factor of two
         for dims in 1:2
             g(x, ω=0.0, η=1e-2) = f(x, ω, η)
-            ref = autoptr(g, I(dims); atol=10^(-10))[1]
+            dom = Basis(I(dims))
+            ref = autosymptr(g, dom; abstol=10^(-10))[1]
             csym = collect(cube_automorphisms(Val(dims)))
             test_syms = (nothing, (I,), (-I,I), csym, reverse(csym)) # order of symmetries shouldn't matter
             for atol in (10.0 .^ [-2, -4, -6]), syms in test_syms
                 nsyms = isnothing(syms) ? 1 : length(syms)
-                @test ref ≈ nsyms*autosymptr(g, I(dims), syms; atol=atol)[1] atol=2atol
+                @test ref ≈ nsyms*autosymptr(g, dom, syms = syms, abstol=atol)[1] atol=2atol
             end
         end
-        
+
     end
 
 end

@@ -17,69 +17,69 @@ using LinearAlgebra: norm, det, checksquare
 using StaticArrays: SVector
 
 
-export symptr, autosymptr, ptr, autoptr
+export autosymptr, Basis
 
-"""
-    npt_update(f, npt, [increment=50])
-
-Returns `npt + increment` to try and get another digit of accuracy from PTR.
-
-!!! note "For developers"
-    This fallback option is a heuristic, since the scaling of the error is
-    generally problem-dependent, so it is appropriate to specialize this method
-    based on the integrand type.
-"""
-npt_update(f, npt::Integer, increment::Integer=50) = npt + increment
-
-
+include("definitions.jl")
 include("ptr.jl")
-include("symptr.jl")
+include("monkhorst_pack.jl")
 
 
-# this is the PTR convergence loop
-function do_autosymptr(f, B, ::Val{d}, buf, atol, rtol, maxevals, nrm, syms) where d
-    npt1 = buf.npt1; rule1 = buf.rule1; npt2 = buf.npt2; rule2 = buf.rule2
-    nsyms = (syms===nothing) ? 1 : length(syms)
+function nextrule!(cache::Vector, state, prev, ruledef)
+    length(cache) < state || return @inbounds(cache[state]), state+1
+    next = nextrule(prev, ruledef)
+    push!(cache, next)
+    return next, state+1
+end
 
-    if (numevals = length(rule1) + length(rule2)) == 0
-        # initialize rules
-        npt1[] = npt_update(f, 0)
-        npt2[] = npt_update(f, npt1[])
-        (npt1[]^d + npt2[]^d)/nsyms ≥ maxevals && throw(ArgumentError("initial npts exceeds maxevals=$maxevals"))
-        rule1=symptr_rule!(rule1, npt1[], Val(d), syms)
-        rule2=symptr_rule!(rule2, npt2[], Val(d), syms)
-    else
-        numevals ≥ maxevals && throw(ArgumentError("initial npts exceeds maxevals=$maxevals"))
-    end
-
-    int1 = symptr(f, B, syms, npt = npt1[], rule = rule1)
-    int2 = symptr(f, B, syms, npt = npt2[], rule = rule2)
-    err = nrm(int1 - int2)
+# this is the p-adaptive convergence loop
+# the cache is a vector of rules of different orders
+# the (optional) buffer is a vector for storing function evaluations
+function p_adapt(f, dom, ruledef, cache::Vector, atol, rtol, maxevals, nrm, buffer)
+    next = iterate(cache)
+    next === nothing && throw(ArgumentError("rule cache is empty"))
+    rule_, state = next
+    int_ = rule_(f, dom, buffer)
+    numevals = countevals(rule_)
 
     while true
-        (err ≤ max(rtol*nrm(int2), atol) || !isfinite(err)) && break
-        if numevals ≥ maxevals
-            @warn "maxevals exceeded during convergence"
-            return int2, err
-        end
-        # update coarse result with finer result
-        int1 = int2
-        npt1[] = npt2[]
-        copy!(rule1, rule2)
         # evaluate integral on finer grid
-        npt2[] = npt_update(f, npt1[])
-        symptr_rule!(rule2, npt2[], Val(d), syms)
-        int2 = symptr(f, B, syms, npt = npt2[], rule = rule2)
-        numevals += length(rule2.x)
-        # self-convergence error estimate
-        err = nrm(int1 - int2)
+        _rule, state = nextrule!(cache, state, rule_, ruledef)
+        _int = _rule(f, dom, buffer)
+        numevals += countevals(_rule)
+        # error estimate
+        err = nrm(int_ - _int)
+        (err ≤ max(rtol*nrm(_int), atol) || !isfinite(err) || numevals ≥ maxevals) && return _int, err
+        # update coarse result with finer result
+        int_ = _int
+        rule_ = _rule
     end
-    return int2, err
+end
+
+
+function pquadrature(f, dom, ruledef; abstol=nothing, reltol=nothing, maxevals=typemax(Int64), norm=norm, cache=nothing, buffer=nothing)
+    d = ndims(dom); T = typeof(float(real(one(eltype(dom)))))
+    atol = (abstol===nothing) ? zero(T) : abstol
+    rtol = (reltol===nothing) ? (iszero(atol) ? sqrt(eps(one(T))) : zero(T)) : reltol
+    cach = (cache===nothing) ? alloc_cache(T, Val(d), ruledef) : cache
+    return p_adapt(f, dom, ruledef, cach, atol, rtol, maxevals, norm, buffer)
+end
+
+"""
+    alloc_cache(::Type{T}, ::Val{d}, rule)
+
+Initialize an empty buffer of PTR rules evaluated from `rule(T,Val(d))` where
+`T` is the domain type and `d` is the number of dimensions.
+
+!!! note "For developers"
+    Providing a special `rule`, (e.g. [`PTR`](@ref))
+"""
+function alloc_cache(::Type{T}, ::Val{d}, rule) where {T,d}
+    return [rule(T,Val(d))]
 end
 
 
 """
-    autosymptr(f, B::AbstractMatrix, syms; atol=0, rtol=sqrt(eps()), maxevals=typemax(Int64), buffer=nothing)
+    autosymptr(f, B::AbstractMatrix, [syms=nothing]; atol=0, rtol=sqrt(eps()), maxevals=typemax(Int64), buffer=nothing)
 
 Computes the integral of `f` to within the specified tolerances and returns a
 tuple `(I, E, numevals, rules)` containing the estimated integral, the estimated
@@ -89,52 +89,15 @@ array-valued integrands this depends on the representation of the integrand
 under the action of the symmetries.
 
 !!! note "Convergence depends on periodicity"
-    If the routine takes a long time to return, double check at the period of
+    If the routine takes a long time to return, double check that the period of
     the function `f` along the basis vectors in the columns of `B` is consistent.
 """
-function autosymptr(f, B::AbstractMatrix, syms, rule=SymPTRRule; atol=nothing, rtol=nothing, maxevals=typemax(Int64), norm=norm, buffer=nothing)
-    d = checksquare(B); T = float(eltype(B))
-    nsyms = (syms===nothing) ? 1 : length(syms)
-    atol_ = (atol===nothing) ? zero(T) : atol/nsyms # rescale tolerance to correct for symmetrization
-    rtol_ = (rtol===nothing) ? (iszero(atol_) ? sqrt(eps(T)) : zero(T)) : rtol
-    buffer_ = (buffer===nothing) ? alloc_autobuffer(T, Val(d), rule) : buffer
-    do_autosymptr(f, B, Val(d), buffer_, atol_, rtol_, maxevals, norm, syms)
+function autosymptr(f, dom::Basis; syms=nothing, a=1.0, rule=nothing, abstol=nothing, reltol=nothing, maxevals=typemax(Int64), norm=norm, cache = nothing, buffer=nothing)
+    T = float(real(eltype(dom)))
+    rule_ = (rule===nothing) ? MonkhorstPackRule(syms, a) : rule
+    atol = (abstol===nothing) ? zero(T) : abstol/nsyms(rule_) # rescale tolerance to correct for symmetrization
+    rtol = (reltol===nothing) ? (iszero(atol) ? sqrt(eps(T)) : zero(T)) : reltol
+    return pquadrature(f, dom, rule_, abstol = atol, reltol = rtol, norm = norm, maxevals = maxevals, cache = cache, buffer = buffer)
 end
-
-alloc_rule(::Val{N}, ::Type{T}, ::Nothing, npt::Int) where {N,T} =
-    ptr_rule!(PTRRule(T, Val(N)), npt, Val(N))
-alloc_rule(::Val{N}, ::Type{T}, syms, npt::Int) where {N,T}=
-    symptr_rule!(SymPTRRule(T, Val(N)), npt, Val(N), syms)
-
-"""
-    alloc_autobuffer(::Type{T}, ::Val{d}, rule)
-
-Initialize an empty buffer of PTR rules evaluated from `rule(T,Val(d))` where
-`T` is the domain type and `d` is the number of dimensions.
-
-!!! note "For developers"
-    Providing a special `rule`, (e.g. [`PTRGrid`](@ref))
-"""
-alloc_autobuffer(::Type{T}, ::Val{d}, rule) where {T,d} =
-    (npt1=fill(0), rule1=rule(T,Val(d)), npt2=fill(0), rule2=rule(T,Val(d)))
-
-# aliases for syms===nothing that ignore symmetry altogether
-
-symptr_rule!(rule::PTRRule, npt, ::Val{d}, ::Nothing) where d =
-    ptr_rule!(rule, npt, Val(d))
-
-symptr(f, B::AbstractMatrix, ::Nothing; kwargs...) = ptr(f, B; kwargs...)
-
-"""
-    autoptr(f, B; kwargs...)
-
-Same as [`autosymptr`](@ref) with trivial symmetries.
-"""
-autoptr(f, B; kwargs...) = autosymptr(f, B, nothing; kwargs...)
-autosymptr(f, B::AbstractMatrix, ::Nothing; kwargs...) =
-    autosymptr(f, B, nothing, PTRRule; kwargs...)
-
-autoptr_buffer(::Type{T}, ::Val{d}) where {T,d} =
-    autosymptr_buffer(T, Val(d), PTRRule)
 
 end
