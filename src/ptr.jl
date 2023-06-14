@@ -2,7 +2,7 @@
 # all weights are assumed to be unity
 # it is an immutable array
 """
-    PTR{d}(x::Vector{T}) where {d,T}
+    PTR{d}(x::AbstractVector{T}) where {d,T}
 
 Stores a `d` dimensional Cartesian product grid of `SVector{d,T}`.
 Similar to `Iterators.product(ntuple(n->x, d)...)`.
@@ -25,7 +25,6 @@ function Base.getindex(p::PTR{N,T}, idx::Vararg{Int,N}) where {N,T}
 end
 
 # iterator interface
-Base.eltype(::Type{PTR{N,T,X}}) where {N,T,X} = Tuple{One,SVector{N,T}}
 Base.IteratorSize(::Type{<:PTR{N}}) where {N} = Base.HasShape{N}()
 Base.size(p::PTR, _) = length(p.x)
 # iteration with a Cartesian index state (extremely similar to Iterators.product)

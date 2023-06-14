@@ -37,17 +37,16 @@ function ptrindex(npt::Int, i::CartesianIndex)
 end
 
 
-# syms are the symmetries
-# a is the ratio dist/period of the distance to nearest pole divided by longest period
+
 struct MonkhorstPackRule{S}
-    syms::S
-    n₀::Int64
-    Δn::Int64
+    syms::S     # collection of point group symmetries
+    n₀::Int64   # the initial number of grid points to use
+    Δn::Int64   # the number of grid points to add with each increment
     MonkhorstPackRule{S}(syms::S, n₀::Int64, Δn::Int64) where {S} = new{S}(syms, n₀, Δn)
 end
 
-# we choose the initial guess to be 1/2pi and the increment log(10)/2pi
-function MonkhorstPackRule(syms::S, a::Real, nmin::Integer=50, nmax::Integer=1000, n₀=inv(2pi), Δn=log(10)/2pi) where {S}
+# we choose the initial guess to be 6/a and the increment log(10)/a
+function MonkhorstPackRule(syms::S, a::Real, nmin::Integer=50, nmax::Integer=1000, n₀=6.0, Δn=log(10)) where {S}
     n0 = nextnpt(a, nmin, nmax, n₀)
     dn = nextnpt(a, nmin, nmax, Δn)
     return MonkhorstPackRule{S}(syms, n0, dn)

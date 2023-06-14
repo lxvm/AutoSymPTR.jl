@@ -12,6 +12,7 @@ end
 Base.getindex(rule::MonkhorstPack, i::Int) = rule.wx[i]
 
 # iteration interface
+Base.eltype(::Type{MonkhorstPack{d,T}}) where {d,T} = Tuple{Int64,SVector{d,T}}
 Base.iterate(rule::MonkhorstPack, args...) = iterate(rule.wx, args...)
 Base.length(rule::MonkhorstPack) = length(rule.wx)
 
