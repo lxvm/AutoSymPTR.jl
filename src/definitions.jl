@@ -13,7 +13,8 @@ Base.:*(b::Basis, A) = b.B*A
 # a trivial quadrature weight for PTR
 struct One end
 
-Base.:*(::One, x) = x
+@inline mymul(::One, x) = x
+@inline mymul(w, x) = w*x
 
 # utilities for defining and incrementing the number of ptr points
 nextnpt(a, nmin, nmax, Δn) = min(max(nmin, round(Int, Δn/a)), nmax)
@@ -56,7 +57,7 @@ nsyms(rule::MonkhorstPackRule) = isnothing(rule.syms) ? 1 : length(rule.syms)
 
 
 # we expect rules to be iterable and indexable and return (w, x) = rule[i]
-quadsum(rule, f, B) = sum(((w,x),) -> w*f(B*x), rule)
+quadsum(rule, f, B) = sum(((w,x),) -> mymul(w, f(B*x)), rule)
 
 function parquadsum(rule, f, B, buffer::Vector)
     (nthreads = Threads.nthreads()) == 1 && rule(f, B, nothing)
@@ -70,7 +71,7 @@ function parquadsum(rule, f, B, buffer::Vector)
         offset = min(i-1, r)*(d+1) + max(i-1-r, 0)*d
         @inbounds for j in 1:jmax
             w, x = rule[offset + j]
-            buffer[i] += w*f(B*x)
+            buffer[i] += mymul(w, f(B*x))
         end
     end
     return sum(buffer)
