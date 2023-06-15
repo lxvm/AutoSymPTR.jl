@@ -48,7 +48,16 @@ function p_adapt(f, dom, ruledef, cache::Vector, atol, rtol, maxevals, nrm, buff
         numevals += countevals(_rule)
         # error estimate
         err = nrm(int_ - _int)
-        (err ≤ max(rtol*nrm(_int), atol) || !isfinite(err) || numevals ≥ maxevals) && return _int, err
+        if isnan(err) || isinf(err)
+            throw(DomainError(dom, "integrand produced $err in the domain"))
+        elseif err ≤ max(rtol*nrm(_int), atol)
+            return _int, err
+        elseif numevals ≥ maxevals
+            @warn "maxevals exceeded"
+            return _int, err
+        else
+            continue
+        end
         # update coarse result with finer result
         int_ = _int
         rule_ = _rule
