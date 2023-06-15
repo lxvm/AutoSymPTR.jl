@@ -55,8 +55,6 @@ function p_adapt(f, dom, ruledef, cache::Vector, atol, rtol, maxevals, nrm, buff
         elseif numevals ≥ maxevals
             @warn "maxevals exceeded"
             return _int, err
-        else
-            continue
         end
         # update coarse result with finer result
         int_ = _int
