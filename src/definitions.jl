@@ -111,7 +111,6 @@ function quadsum(rule, f::BatchIntegrand, B)
         next = iterate(rule, state)
     end
     f.f!(f.y, f.x)
-    I = sum(f.y)
     (w,_), state = prev
     I = mymul(w, f.y[j += 1])
     prev = iterate(rule, state)
@@ -141,6 +140,56 @@ function quadsum(rule, f::BatchIntegrand, B)
                 prev = iterate(rule, state)
             end
         end
+    end
+
+    return I
+end
+
+function fill_xbuf!(xbuf::Vector, B, rule, r, off, nchunks)
+    Threads.@threads for (xrange, _) in chunks(r, nchunks)
+        for i in xrange
+            _, x = rule[r[i]]
+            xbuf[r[i]-off] = B*x
+        end
+    end
+end
+
+function quad_buf!(buffer::Vector, fy::Vector, rule, r, off, nchunks)
+    Threads.@threads for (wrange, ichunk) in chunks(r, nchunks)
+        buffer[ichunk] = zero(eltype(buffer))
+        for i in wrange
+            w, _ = rule[r[i]]
+            buffer[ichunk] += mymul(w, fy[r[i]-off])
+        end
+    end
+end
+
+function parquadsum(rule, f::BatchIntegrand, B, buffer::Vector)
+    (nthreads = min(Threads.nthreads(), f.max_batch)) == 1 && rule(f, B, nothing)
+
+    n = countevals(rule)
+    l = m = min(n, f.max_batch)
+    resize!(f.x, m); resize!(f.y, m)
+    fill_xbuf!(f.x, B, rule, 1:m,0, nthreads)
+    f.f!(f.y, f.x)
+    resize!(buffer, min(m, nthreads))
+    quad_buf!(buffer, f.y, rule, 1:m,0, nthreads)
+    I = sum(buffer)
+
+    # accumulate remainder
+    while l < n
+        k = min(n-l, f.max_batch)
+        if k < length(f.x)
+            resize!(f.x, k)
+            resize!(f.y, k)
+        end
+        k < length(buffer) && resize!(buffer, k)
+        r = l+1:l+k
+        fill_xbuf!(f.x, B, rule, r,l, nthreads)
+        f.f!(f.y, f.x)
+        quad_buf!(buffer, f.y, rule, r,l, nthreads)
+        I += sum(buffer)
+        l += k
     end
 
     return I

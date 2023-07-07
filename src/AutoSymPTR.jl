@@ -15,7 +15,7 @@ module AutoSymPTR
 
 using LinearAlgebra: norm, det, checksquare
 using StaticArrays: SVector
-
+using ChunkSplitters: chunks
 
 export autosymptr, Basis
 
@@ -33,7 +33,8 @@ end
 
 # this is the p-adaptive convergence loop
 # the cache is a vector of rules of different orders
-# the (optional) buffer is a vector for storing function evaluations
+# the (optional) buffer is a workspace for the rule to store function
+# evaluations or accumulators for parallel evaluation
 function p_adapt(f::F, dom, ruledef, cache::Vector, abstol, reltol, maxevals, nrm, buffer) where {F}
     # unroll first two rule evaluations to get right types
     next = iterate(cache)
