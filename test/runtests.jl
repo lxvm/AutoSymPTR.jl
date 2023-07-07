@@ -319,4 +319,15 @@ n_permutations(n::Integer) = factorial(n)
 
     end
 
+    @testset "BatchIntegrand" begin
+        f(x) = 1.0 + sum(cos, x)
+        f!(y, x) = y .= f.(x)
+        for npt in (30,), dims in 1:3, max_batch in (1, 2, 3, 4, 5, 29, 30, 31, typemax(Int))
+            g = AutoSymPTR.BatchIntegrand(f!, Float64[], SVector{dims,Float64}[], max_batch=max_batch)
+            B = 2pi*I(dims)
+            dom = Basis(B)
+            rule = PTR(Float64, Val(dims), npt)
+            @test abs(det(B)) ≈ rule(f, dom) ≈ rule(g, dom)
+        end
+    end
 end
