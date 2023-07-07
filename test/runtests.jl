@@ -294,7 +294,8 @@ n_permutations(n::Integer) = factorial(n)
                 csym = collect(cube_automorphisms(Val(dims)))
                 test_syms = ((I,), (-I,I), csym, reverse(csym)) # order of symmetries shouldn't matter
                 for syms in test_syms
-                    int = autosymptr(h, dom, syms = syms, abstol=atol)[1]
+                    nsyms = isnothing(syms) ? 1 : length(syms)
+                    int = autosymptr(h, dom, syms = syms, abstol=atol/nsyms)[1]
                     int_ = zero(int)
                     for S in syms
                         int_ += S * int * S'
@@ -312,7 +313,7 @@ n_permutations(n::Integer) = factorial(n)
             test_syms = (nothing, (I,), (-I,I), csym, reverse(csym)) # order of symmetries shouldn't matter
             for atol in (10.0 .^ [-2, -4, -6]), syms in test_syms
                 nsyms = isnothing(syms) ? 1 : length(syms)
-                @test ref ≈ nsyms*autosymptr(g, dom, syms = syms, abstol=atol)[1] atol=2atol
+                @test ref ≈ nsyms*autosymptr(g, dom, syms = syms, abstol=atol/nsyms)[1] atol=2atol
             end
         end
 

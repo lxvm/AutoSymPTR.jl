@@ -34,20 +34,25 @@ end
 # this is the p-adaptive convergence loop
 # the cache is a vector of rules of different orders
 # the (optional) buffer is a vector for storing function evaluations
-function p_adapt(f, dom, ruledef, cache::Vector, atol, rtol, maxevals, nrm, buffer)
+function p_adapt(f::F, dom, ruledef, cache::Vector, abstol, reltol, maxevals, nrm, buffer) where {F}
+    # unroll first two rule evaluations to get right types
     next = iterate(cache)
     next === nothing && throw(ArgumentError("rule cache is empty"))
     rule_, state = next
     int_ = rule_(f, dom, buffer)
     numevals = countevals(rule_)
 
+    _rule, state = nextrule!(cache, state, rule_, ruledef)
+    _int = _rule(f, dom, buffer)
+    numevals += countevals(_rule)
+
+    err = nrm(int_ - _int)
+
+    # logic to handle dimensional quantities
+    atol = something(abstol, zero(err))
+    rtol = something(reltol, iszero(atol) ? sqrt(eps(typeof(one(err)))) : zero(typeof(one(err))))
+
     while true
-        # evaluate integral on finer grid
-        _rule, state = nextrule!(cache, state, rule_, ruledef)
-        _int = _rule(f, dom, buffer)
-        numevals += countevals(_rule)
-        # error estimate
-        err = nrm(int_ - _int)
         if isnan(err) || isinf(err)
             throw(DomainError(dom, "integrand produced $err in the domain"))
         elseif err ≤ max(rtol*nrm(_int), atol)
@@ -59,16 +64,22 @@ function p_adapt(f, dom, ruledef, cache::Vector, atol, rtol, maxevals, nrm, buff
         # update coarse result with finer result
         int_ = _int
         rule_ = _rule
+        # evaluate integral on finer grid
+        _rule, state = nextrule!(cache, state, rule_, ruledef)
+        _int = _rule(f, dom, buffer)
+        numevals += countevals(_rule)
+        # error estimate
+        err = nrm(int_ - _int)
     end
+
+    return _int, err
 end
 
 
 function pquadrature(f, dom, ruledef; abstol=nothing, reltol=nothing, maxevals=typemax(Int64), norm=norm, cache=nothing, buffer=nothing)
     d = ndims(dom); T = typeof(float(real(one(eltype(dom)))))
-    atol = (abstol===nothing) ? zero(T) : abstol
-    rtol = (reltol===nothing) ? (iszero(atol) ? sqrt(eps(one(T))) : zero(T)) : reltol
     cach = (cache===nothing) ? alloc_cache(T, Val(d), ruledef) : cache
-    return p_adapt(f, dom, ruledef, cach, atol, rtol, maxevals, norm, buffer)
+    return p_adapt(f, dom, ruledef, cach, abstol, reltol, maxevals, norm, buffer)
 end
 
 """
@@ -103,11 +114,8 @@ evaluations will be parallelized and it will be assumed that the integrand is th
     the function `f` along the basis vectors in the columns of `B` is consistent.
 """
 function autosymptr(f, dom::Basis; syms=nothing, a=1.0, rule=nothing, abstol=nothing, reltol=nothing, maxevals=typemax(Int64), norm=norm, cache = nothing, buffer=nothing)
-    T = float(real(eltype(dom)))
     rule_ = (rule===nothing) ? MonkhorstPackRule(syms, a) : rule
-    atol = (abstol===nothing) ? zero(T) : abstol/nsyms(rule_) # rescale tolerance to correct for symmetrization
-    rtol = (reltol===nothing) ? (iszero(atol) ? sqrt(eps(T)) : zero(T)) : reltol
-    return pquadrature(f, dom, rule_, abstol = atol, reltol = rtol, norm = norm, maxevals = maxevals, cache = cache, buffer = buffer)
+    return pquadrature(f, dom, rule_, abstol = abstol, reltol = reltol, norm = norm, maxevals = maxevals, cache = cache, buffer = buffer)
 end
 
 end
