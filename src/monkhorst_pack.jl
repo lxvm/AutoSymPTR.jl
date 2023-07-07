@@ -76,6 +76,6 @@ function nextrule(p::MonkhorstPack{d,T}, r::MonkhorstPackRule) where {d,T}
     return MonkhorstPack(T, Val(d), p.npt+r.Δn, r.syms)
 end
 
-function (rule::MonkhorstPack{d})(f, B::Basis, buffer=nothing) where d
-    return quadsum(rule, f, B, buffer) * ((abs(det(B.B)) / (rule.npt^d * rule.nsyms)))
+function (rule::MonkhorstPack{d})(f::F, B::Basis, buffer=nothing) where {d,F}
+    return quadsum(rule, f, B, buffer) * (abs(det(B.B)) / (rule.npt^d * rule.nsyms))
 end

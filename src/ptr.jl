@@ -60,7 +60,7 @@ end
 # rule interface
 PTR(::Type{T}, ::Val{d}, npt) where {T,d} = PTR{d}(ptrpoints(npt))
 countevals(p::PTR) = length(p)
-function (rule::PTR)(f, B::Basis, buffer=nothing)
+function (rule::PTR)(f::F, B::Basis, buffer=nothing) where {F}
     return quadsum(rule, f, B, buffer) * (abs(det(B.B)) / countevals(rule))
 end
 
