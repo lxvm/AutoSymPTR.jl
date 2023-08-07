@@ -66,7 +66,6 @@ function MonkhorstPack(::Type{T}, v::Val{d}, npt, syms) where {d,T}
     end
     return MonkhorstPack(npt, length(syms), wx)
 end
-countevals(rule::MonkhorstPack) = length(rule)
 
 function (r::MonkhorstPackRule)(::Type{T}, v::Val{d}) where {T,d}
     return MonkhorstPack(T, v, r.n₀, r.syms)
@@ -77,5 +76,6 @@ function nextrule(p::MonkhorstPack{d,T}, r::MonkhorstPackRule) where {d,T}
 end
 
 function (rule::MonkhorstPack{d})(f::F, B::Basis, buffer=nothing) where {d,F}
-    return quadsum(rule, f, B, buffer) * (abs(det(B.B)) / (rule.npt^d * rule.nsyms))
+    arule = AffineQuad(rule, B)
+    return quadsum(arule, f, arule.vol / (rule.npt^d * rule.nsyms), buffer)
 end

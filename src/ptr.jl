@@ -59,9 +59,9 @@ end
 
 # rule interface
 PTR(::Type{T}, ::Val{d}, npt) where {T,d} = PTR{d}(ptrpoints(npt))
-countevals(p::PTR) = length(p)
 function (rule::PTR)(f::F, B::Basis, buffer=nothing) where {F}
-    return quadsum(rule, f, B, buffer) * (abs(det(B.B)) / countevals(rule))
+    arule = AffineQuad(rule, B)
+    return quadsum(arule, f, arule.vol / length(rule), buffer)
 end
 
 function (r::MonkhorstPackRule{Nothing})(::Type{T}, v::Val{d}) where {T,d}

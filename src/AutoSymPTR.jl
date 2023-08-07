@@ -14,7 +14,7 @@ which is nontrivial in cases with non-scalar integrands. A simple example is
 module AutoSymPTR
 
 using LinearAlgebra: norm, det, checksquare
-using StaticArrays: SVector
+using StaticArrays: SVector, SMatrix
 using ChunkSplitters: chunks
 
 export autosymptr, Basis
@@ -24,8 +24,9 @@ include("ptr.jl")
 include("monkhorst_pack.jl")
 
 
-function nextrule!(cache::Vector, state, prev, ruledef)
+function nextrule!(cache::Vector, state, keepmost, prev, ruledef)
     length(cache) < state || return @inbounds(cache[state]), state+1
+    length(cache) == keepmost && (popfirst!(cache); state -= 1)
     next = nextrule(prev, ruledef)
     push!(cache, next)
     return next, state+1
@@ -35,19 +36,24 @@ end
 # the cache is a vector of rules of different orders
 # the (optional) buffer is a workspace for the rule to store function
 # evaluations or accumulators for parallel evaluation
-function p_adapt(f::F, dom, ruledef, cache::Vector, abstol, reltol, maxevals, nrm, buffer) where {F}
+function p_adapt(f::F, dom, ruledef, cache::Vector, keepmost, abstol, reltol, maxevals, nrm, buffer) where {F}
     # unroll first two rule evaluations to get right types
     next = iterate(cache)
     next === nothing && throw(ArgumentError("rule cache is empty"))
     rule_, state = next
-    int_ = rule_(f, dom, buffer)
-    numevals = countevals(rule_)
+    _rule, state = nextrule!(cache, state, keepmost, rule_, ruledef)
 
-    _rule, state = nextrule!(cache, state, rule_, ruledef)
-    _int = _rule(f, dom, buffer)
-    numevals += countevals(_rule)
-
-    err = nrm(int_ - _int)
+    if f isa InplaceIntegrand # rule evaluators should write inplace to f.I
+        int_ = f.Itmp .= rule_(f, dom, buffer)
+        _int = _rule(f, dom, buffer)
+        int_ .-= _int
+        err = nrm(int_)
+    else
+        int_ = rule_(f, dom, buffer)
+        _int = _rule(f, dom, buffer)
+        err = nrm(int_ - _int)
+    end
+    numevals = length(rule_) + length(_rule)
 
     # logic to handle dimensional quantities
     atol = something(abstol, zero(err))
@@ -63,24 +69,34 @@ function p_adapt(f::F, dom, ruledef, cache::Vector, abstol, reltol, maxevals, nr
             return _int, err
         end
         # update coarse result with finer result
-        int_ = _int
         rule_ = _rule
         # evaluate integral on finer grid
-        _rule, state = nextrule!(cache, state, rule_, ruledef)
-        _int = _rule(f, dom, buffer)
-        numevals += countevals(_rule)
-        # error estimate
-        err = nrm(int_ - _int)
+        _rule, state = nextrule!(cache, state, keepmost, rule_, ruledef)
+        if f isa InplaceIntegrand
+            int_ .= _int
+            int_ .-= _rule(f, dom, buffer) # _int updated inplace
+            err = nrm(int_)
+        else
+            int_ = _int
+            _int = _rule(f, dom, buffer)
+            err = nrm(int_ - _int)
+        end
+        numevals += length(_rule)
     end
 
     return _int, err
 end
 
 
-function pquadrature(f, dom, ruledef; abstol=nothing, reltol=nothing, maxevals=typemax(Int64), norm=norm, cache=nothing, buffer=nothing)
+function pquadrature(f, dom, ruledef; abstol=nothing, reltol=nothing, maxevals=typemax(Int64), norm=norm, cache=nothing, keepmost::Integer=2, buffer=nothing)
     d = ndims(dom); T = typeof(float(real(one(eltype(dom)))))
     cach = (cache===nothing) ? alloc_cache(T, Val(d), ruledef) : cache
-    return p_adapt(f, dom, ruledef, cach, abstol, reltol, maxevals, norm, buffer)
+    return p_adapt(f, dom, ruledef, cach, keepmost, abstol, reltol, maxevals, norm, buffer)
+end
+function pquadrature(f::InplaceIntegrand{F,TI,<:AbstractArray{Nothing}}, dom, ruledef; kws...) where {F,TI}
+    d = ndims(dom); T = typeof(float(real(one(eltype(dom)))))
+    g = InplaceIntegrand(f.f!, f.I, f.Itmp, f.I/det(one(SMatrix{d,d,T,d^2})*oneunit(eltype(dom))))
+    return pquadrature(g, dom, ruledef; kws...)
 end
 
 """
@@ -114,9 +130,9 @@ evaluations will be parallelized and it will be assumed that the integrand is th
     If the routine takes a long time to return, double check that the period of
     the function `f` along the basis vectors in the columns of `B` is consistent.
 """
-function autosymptr(f, dom::Basis; syms=nothing, a=1.0, rule=nothing, abstol=nothing, reltol=nothing, maxevals=typemax(Int64), norm=norm, cache = nothing, buffer=nothing)
+function autosymptr(f, dom::Basis; syms=nothing, a=1.0, rule=nothing, abstol=nothing, reltol=nothing, maxevals=typemax(Int64), norm=norm, cache = nothing, keepmost::Integer=2, buffer=nothing)
     rule_ = (rule===nothing) ? MonkhorstPackRule(syms, a) : rule
-    return pquadrature(f, dom, rule_, abstol = abstol, reltol = reltol, norm = norm, maxevals = maxevals, cache = cache, buffer = buffer)
+    return pquadrature(f, dom, rule_, abstol = abstol, reltol = reltol, norm = norm, maxevals = maxevals, cache = cache, keepmost=keepmost, buffer = buffer)
 end
 
 end

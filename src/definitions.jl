@@ -10,11 +10,61 @@ Base.ndims(::Basis{d}) where {d} = d
 Base.eltype(::Type{<:Basis{d,T}}) where {d,T} = T
 Base.:*(b::Basis, A) = b.B*A
 
+struct Zero end
+
+@inline myadd(x, ::Zero) = x
+@inline myadd(x, y) = x + y
+
 # a trivial quadrature weight for PTR
-struct One end
+struct One <: Number end
 
 @inline mymul(::One, x) = x
 @inline mymul(w, x) = w*x
+
+"""
+    AffineQuad(rule, A, b, c, vol)
+
+A wrapper to an iterable and indexable quadrature rule that applies an affine coordinate
+transformation to the nodes of the form `A*(x+c)+b`. While the weights should be rescaled by the
+Jacobian determinant `vol=abs(det(A))`, the value is stored in the `vol` field of the struct
+so that the caller can minimize multiplication by applying the rescaling after computing the
+rule.
+
+While the quadrature rule should be unitless, the affine transform may have units.
+"""
+struct AffineQuad{TR,TA,Tb,Tc,TV}
+    rule::TR
+    A::TA
+    b::Tb
+    c::Tc
+    vol::TV
+end
+
+apply_affine(aq::AffineQuad, x) =  myadd(mymul(aq.A, myadd(x, aq.c)), aq.b)
+
+function Base.iterate(aq::AffineQuad, args...)
+    next = iterate(aq.rule, args...)
+    next === nothing && return nothing
+    (w, x), state = next
+    return (w, apply_affine(aq, x)), state
+end
+Base.isdone(aq::AffineQuad, args...) = Base.isdone(aq.rule, args...)
+Base.IteratorSize(::Type{<:AffineQuad{TR}}) where {TR} = Base.IteratorSize(TR)
+Base.length(aq::AffineQuad) = length(aq.rule)
+Base.size(aq::AffineQuad) = size(aq.rule)
+# the eltype could change due to the affine transform
+Base.IteratorEltype(::Type{<:AffineQuad{TR}}) where {TR} = Base.IteratorEltype(TR)
+Base.eltype(::Type{<:AffineQuad{TR}}) where {TR} = eltype(TR)
+
+function Base.getindex(aq::AffineQuad, i)
+    w, x = getindex(aq.rule, i)
+    return w, apply_affine(aq, x)
+end
+Base.firstindex(aq::AffineQuad) = firstindex(aq.rule)
+Base.lastindex(aq::AffineQuad)  = lastindex(aq.rule)
+
+AffineQuad(rule) = AffineQuad(rule, One(), Zero(), Zero(), 1)
+AffineQuad(rule, B::Basis) = AffineQuad(rule, B.B, Zero(), Zero(), abs(det(B.B)))
 
 # utilities for defining and incrementing the number of ptr points
 nextnpt(a, nmin, nmax, Δn) = min(max(nmin, round(Int, Δn/a)), nmax)
@@ -57,49 +107,72 @@ nsyms(rule::MonkhorstPackRule) = isnothing(rule.syms) ? 1 : length(rule.syms)
 
 
 # we expect rules to be iterable and indexable and return (w, x) = rule[i]
-quadsum(rule, f, B) = sum(((w,x),) -> mymul(w, f(B*x)), rule)
+quadsum(rule, f, vol) = vol * sum(((w,x),) -> mymul(w, f(x)), rule)
 
-function parquadsum(rule, f, B, buffer::Vector)
-    (nthreads = Threads.nthreads()) == 1 && rule(f, B, nothing)
-    n = countevals(rule)
-    d, r = divrem(n, nthreads)
-    resize!(buffer, nthreads)
-    fill!(buffer, zero(eltype(buffer)))
-    Threads.@threads for i in Base.OneTo(nthreads)
-        # batch nodes into `nthreads` continguous groups of size d or d+1 (remainder)
-        jmax = (i <= r ? d+1 : d)
-        offset = min(i-1, r)*(d+1) + max(i-1-r, 0)*d
-        @inbounds for j in 1:jmax
-            w, x = rule[offset + j]
-            buffer[i] += mymul(w, f(B*x))
-        end
-    end
-    return sum(buffer)
+quadsum(rule, f, vol, ::Nothing) = quadsum(rule, f, vol)
+
+
+struct InplaceIntegrand{F,T<:AbstractArray,Y<:AbstractArray}
+    # in-place function f!(y, x) that takes one x value and outputs an array of results in-place
+    f!::F
+    I::T
+    Itmp::T
+    y::Y
 end
 
-quadsum(rule, f, B, ::Nothing) = quadsum(rule, f, B)
-quadsum(rule, f, B, buffer) = parquadsum(rule, f, B, buffer)
+"""
+    InplaceIntegrand(f!, result::AbstractArray)
 
+Constructor for a `InplaceIntegrand` accepting an integrand of the form `f!(y,x)`. The
+caller also provides an output array needed to store the result of the quadrature.
+Intermediate `y` arrays are allocated during the calculation, and the final result is
+may or may not be written to `result`, so use the IntegralSolution immediately after the
+calculation to read the result, and don't expect it to persist if the same integrand is used
+for another calculation.
+"""
+function InplaceIntegrand(f!, result)
+    return InplaceIntegrand(f!, result, similar(result), similar(result, Nothing))
+end
 
+function quadsum(rule, f::InplaceIntegrand, vol)
+    next = iterate(rule)
+    next === nothing && throw(ArgumentError("empty rule"))
+    (w, x), state = next
+    f.f!(f.y, x)
+    I = f.I .= mymul.(w, f.y)
+    next = iterate(rule, state)
+    while next !== nothing
+        (w, x), state = next
+        f.f!(f.y, x)
+        I .+= mymul.(w, f.y)
+        next = iterate(rule, state)
+    end
+    return I .*= vol
+end
+
+function quadsum(rule, f::InplaceIntegrand{F,<:AbstractArray,<:AbstractArray{Nothing}}, vol) where {F}
+    g = InplaceIntegrand(f.f!, f.I, f.Itmp, f.I/vol)
+    return quadsum(rule, g, vol)
+end
 
 struct BatchIntegrand{F,Y,X}
     # in-place function f!(y, x) that takes an array of x values and outputs an array of results in-place
     f!::F
-    y::Vector{Y}
-    x::Vector{X}
+    y::Y
+    x::X
     max_batch::Int # maximum number of x to supply in parallel (defaults to typemax(Int))
-    function BatchIntegrand{F,Y,X}(f!::F, y::Vector{Y}, x::Vector{X}, max_batch::Int) where {F,Y,X}
+    function BatchIntegrand(f!, y::AbstractArray, x::AbstractVector, max_batch::Integer=typemax(Int))
         max_batch > 0 || throw(ArgumentError("maximum batch size must be positive"))
-        return new{F,Y,X}(f!, y, x, max_batch)
+        return new{typeof(f!),typeof(y),typeof(x)}(f!, y, x, max_batch)
     end
 end
 
-BatchIntegrand(f!::F, y::Vector{Y}, x::Vector{X}; max_batch::Integer=typemax(Int)) where {F,Y,X} =
-    BatchIntegrand{F,Y,X}(f!, y, x, max_batch)
+BatchIntegrand(f!, y, x; max_batch::Integer=typemax(Int)) =
+    BatchIntegrand(f!, y, x, max_batch)
 
-function quadsum(rule, f::BatchIntegrand, B)
+function quadsum(rule, f::BatchIntegrand, vol)
     # unroll first batch iteration to get right types
-    n = countevals(rule)
+    n = length(rule)
     m = min(n, f.max_batch)
     resize!(f.x, m); resize!(f.y, m)
     prev = next = iterate(rule)
@@ -107,7 +180,7 @@ function quadsum(rule, f::BatchIntegrand, B)
     i = j = 0
     while next !== nothing && i < m
         (_,x), state = next
-        f.x[i += 1] = B*x
+        f.x[i += 1] = x
         next = iterate(rule, state)
     end
     f.f!(f.y, f.x)
@@ -124,7 +197,7 @@ function quadsum(rule, f::BatchIntegrand, B)
         if i == j
             while next !== nothing && i-j < m
                 (_,x), state = next
-                f.x[(i += 1) - j] = B*x
+                f.x[(i += 1) - j] = x
                 next = iterate(rule, state)
             end
             if next === nothing
@@ -142,14 +215,16 @@ function quadsum(rule, f::BatchIntegrand, B)
         end
     end
 
-    return I
+    return I*vol
 end
 
-function fill_xbuf!(xbuf::Vector, B, rule, r, off, nchunks)
+quadsum(rule, f::BatchIntegrand, vol, buffer::Vector) = parquadsum(rule, f, vol, buffer)
+
+function fill_xbuf!(xbuf::Vector, rule, r, off, nchunks)
     Threads.@threads for (xrange, _) in chunks(r, nchunks)
         for i in xrange
             _, x = rule[r[i]]
-            xbuf[r[i]-off] = B*x
+            xbuf[r[i]-off] = x
         end
     end
 end
@@ -164,13 +239,15 @@ function quad_buf!(buffer::Vector, fy::Vector, rule, r, off, nchunks)
     end
 end
 
-function parquadsum(rule, f::BatchIntegrand, B, buffer::Vector)
-    (nthreads = min(Threads.nthreads(), f.max_batch)) == 1 && rule(f, B, nothing)
+# we parallelize the filling of the quadrature buffers, but the BatchIntegrand needs to
+# parallelize the integrand evaluations
+function parquadsum(rule, f::BatchIntegrand, vol, buffer::Vector)
+    (nthreads = min(Threads.nthreads(), length(buffer))) == 1 && quadsum(rule, f, vol)
 
-    n = countevals(rule)
+    n = length(rule)
     l = m = min(n, f.max_batch)
     resize!(f.x, m); resize!(f.y, m)
-    fill_xbuf!(f.x, B, rule, 1:m,0, nthreads)
+    fill_xbuf!(f.x, rule, 1:m,0, nthreads)
     f.f!(f.y, f.x)
     resize!(buffer, min(m, nthreads))
     quad_buf!(buffer, f.y, rule, 1:m,0, nthreads)
@@ -185,12 +262,15 @@ function parquadsum(rule, f::BatchIntegrand, B, buffer::Vector)
         end
         k < length(buffer) && resize!(buffer, k)
         r = l+1:l+k
-        fill_xbuf!(f.x, B, rule, r,l, nthreads)
+        fill_xbuf!(f.x, rule, r,l, nthreads)
         f.f!(f.y, f.x)
         quad_buf!(buffer, f.y, rule, r,l, nthreads)
         I += sum(buffer)
         l += k
     end
+    resize!(buffer, nthreads) # reset to original size
 
-    return I
+    return I*vol
 end
+
+# TODO support BatchIntegrand(InplaceIntegrand)
