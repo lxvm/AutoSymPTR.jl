@@ -68,7 +68,9 @@ AffineQuad(rule, B::Basis) = AffineQuad(rule, B.B, Zero(), Zero(), abs(det(B.B))
 
 # utilities for defining and incrementing the number of ptr points
 nextnpt(a, nmin, nmax, Δn) = min(max(nmin, round(Int, Δn/a)), nmax)
-ptrpoints(npt) = float(range(0, length=npt, step=1//npt))
+# quadrature nodes and weights should be unitless
+ptrpoints(npt) = range(0, length=npt, step=1//npt)
+ptrpoints(T::Type, npt) = float(real(one(T)))*ptrpoints(npt)
 # map a linear index to a Cartesian index
 function ptrindex(npt::Int, ::Val{N}, i::Int) where {N}
     pow = cumprod(ntuple(n->n==1 ? 1 : npt, Val(N)))
@@ -109,7 +111,7 @@ nsyms(rule::MonkhorstPackRule) = isnothing(rule.syms) ? 1 : length(rule.syms)
 # we expect rules to be iterable and indexable and return (w, x) = rule[i]
 quadsum(rule, f, vol) = vol * sum(((w,x),) -> mymul(w, f(x)), rule)
 
-quadsum(rule, f, vol, ::Nothing) = quadsum(rule, f, vol)
+quadsum(rule, f, vol, buffer) = quadsum(rule, f, vol)
 
 
 struct InplaceIntegrand{F,T<:AbstractArray,Y<:AbstractArray}
@@ -242,7 +244,8 @@ end
 # we parallelize the filling of the quadrature buffers, but the BatchIntegrand needs to
 # parallelize the integrand evaluations
 function parquadsum(rule, f::BatchIntegrand, vol, buffer::Vector)
-    (nthreads = min(Threads.nthreads(), length(buffer))) == 1 && quadsum(rule, f, vol)
+    nthreads = (len=length(buffer)) == 0 ? Threads.nthreads() : min(Threads.nthreads(), len)
+    nthreads == 1 && quadsum(rule, f, vol)
 
     n = length(rule)
     l = m = min(n, f.max_batch)

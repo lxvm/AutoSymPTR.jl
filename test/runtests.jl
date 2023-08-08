@@ -81,7 +81,7 @@ n_permutations(n::Integer) = factorial(n)
                 B = rand(dims,dims)
                 dom = Basis(B)
                 csym = collect(cube_automorphisms(Val(dims)))
-                test_syms = ((I,), (-I,I), csym, reverse(csym)) # order of symmetries shouldn't matter
+                test_syms = ((1.0I,), (-1.0I,1.0I), csym, reverse(csym)) # order of symmetries shouldn't matter
                 sols = Vector{Float64}(undef, 2*length(test_syms))
                 for (i,syms) in enumerate(test_syms)
                     rule = MonkhorstPack(Float64, Val(dims), npt, syms)
@@ -100,7 +100,7 @@ n_permutations(n::Integer) = factorial(n)
                 B = 2pi*I(dims)
                 dom = Basis(B)
                 csym = collect(cube_automorphisms(Val(dims)))
-                test_syms = ((I,), (-I,I), csym, reverse(csym)) # order of symmetries shouldn't matter
+                test_syms = ((1.0I,), (-1.0I,1.0I), csym, reverse(csym)) # order of symmetries shouldn't matter
                 sols = Vector{Float64}(undef, 2*length(test_syms))
                 for (i,syms) in enumerate(test_syms)
                     rule = MonkhorstPack(Float64, Val(dims), npt, syms)
@@ -119,7 +119,7 @@ n_permutations(n::Integer) = factorial(n)
                 npts = (10, 20, 40, 80) # geometric progression for asymptotic behavior
                 sols = Vector{ComplexF64}(undef, length(npts))
                 csym = collect(cube_automorphisms(Val(dims)))
-                test_syms = ((I,), (-I,I), csym, reverse(csym)) # order of symmetries shouldn't matter
+                test_syms = ((1.0I,), (-1.0I,1.0I), csym, reverse(csym)) # order of symmetries shouldn't matter
                 for syms in test_syms
                     for (i,npt) in enumerate(npts)
                         sols[i] = length(syms)*MonkhorstPack(Float64, Val(dims), npt, syms)(f, dom)
@@ -142,7 +142,7 @@ n_permutations(n::Integer) = factorial(n)
                 dom = Basis(I(dims))
                 csym = collect(cube_automorphisms(Val(dims)))
                 ref = PTR(Float64, Val(dims), npt)(f, dom)
-                test_syms = ((I,), (-I,I), csym, reverse(csym)) # order of symmetries shouldn't matter
+                test_syms = ((1.0I,), (-1.0I,1.0I), csym, reverse(csym)) # order of symmetries shouldn't matter
                 sols = Vector{ComplexF64}(undef, length(test_syms))
                 for (i,syms) in enumerate(test_syms)
                     sols[i] = MonkhorstPack(Float64, Val(dims), npt, syms)(f, dom)*length(syms)
@@ -164,7 +164,7 @@ n_permutations(n::Integer) = factorial(n)
                 dom = Basis(I(dims))
                 ref = PTR(Float64, Val(dims), npt)(h, dom)
                 csym = collect(cube_automorphisms(Val(dims)))
-                test_syms = ((I,), (-I,I), csym, reverse(csym)) # order of symmetries shouldn't matter
+                test_syms = ((1.0I,), (-1.0I,1.0I), csym, reverse(csym)) # order of symmetries shouldn't matter
                 for syms in test_syms
                     int = MonkhorstPack(Float64, Val(dims), npt, syms)(h, dom)*length(syms)
                     int_ = zero(int)
@@ -198,7 +198,7 @@ n_permutations(n::Integer) = factorial(n)
             pts = chebpoints.(T, order, 1:d)
             return ClenshawCurtis(tuple(pts...))
         end
-        AutoSymPTR.countevals(rule::ClenshawCurtis) = prod(length, rule.x)
+        Base.length(rule::ClenshawCurtis) = prod(length, rule.x)
         function AutoSymPTR.nextrule(rule::ClenshawCurtis{d,T}, ::Type{ClenshawCurtis}) where {d,T}
             return ClenshawCurtis(T, Val(d), 2 .* length.(rule.x))
         end
@@ -254,7 +254,7 @@ n_permutations(n::Integer) = factorial(n)
         for dims in 1:3
             B = Basis(rand(dims,dims))
             csym = collect(cube_automorphisms(Val(dims)))
-            test_syms = (nothing, (I,), (-I,I), csym, reverse(csym)) # order of symmetries shouldn't matter
+            test_syms = (nothing, (1.0I,), (-1.0I,1.0I), csym, reverse(csym)) # order of symmetries shouldn't matter
             sols = Vector{ComplexF64}(undef, length(test_syms))
             for (i,syms) in enumerate(test_syms)
                 nsyms = isnothing(syms) ? 1 : length(syms)
@@ -269,7 +269,7 @@ n_permutations(n::Integer) = factorial(n)
         for dims in 1:3
             B = Basis(I(dims))
             csym = collect(cube_automorphisms(Val(dims)))
-            test_syms = (nothing, (I,), (-I,I), csym, reverse(csym)) # order of symmetries shouldn't matter
+            test_syms = (nothing, (1.0I,), (-1.0I,1.0I), csym, reverse(csym)) # order of symmetries shouldn't matter
             sols = Vector{ComplexF64}(undef, length(test_syms))
             for (i,syms) in enumerate(test_syms)
                 nsyms = isnothing(syms) ? 1 : length(syms)
@@ -292,7 +292,7 @@ n_permutations(n::Integer) = factorial(n)
                 dom = Basis(I(dims))
                 ref = autosymptr(h, dom; abstol=atol)[1]
                 csym = collect(cube_automorphisms(Val(dims)))
-                test_syms = ((I,), (-I,I), csym, reverse(csym)) # order of symmetries shouldn't matter
+                test_syms = ((1.0I,), (-1.0I,1.0I), csym, reverse(csym)) # order of symmetries shouldn't matter
                 for syms in test_syms
                     nsyms = isnothing(syms) ? 1 : length(syms)
                     int = autosymptr(h, dom, syms = syms, abstol=atol/nsyms)[1]
@@ -310,7 +310,7 @@ n_permutations(n::Integer) = factorial(n)
             dom = Basis(I(dims))
             ref = autosymptr(g, dom; abstol=10^(-10))[1]
             csym = collect(cube_automorphisms(Val(dims)))
-            test_syms = (nothing, (I,), (-I,I), csym, reverse(csym)) # order of symmetries shouldn't matter
+            test_syms = (nothing, (1.0I,), (-1.0I,1.0I), csym, reverse(csym)) # order of symmetries shouldn't matter
             for atol in (10.0 .^ [-2, -4, -6]), syms in test_syms
                 nsyms = isnothing(syms) ? 1 : length(syms)
                 @test ref ≈ nsyms*autosymptr(g, dom, syms = syms, abstol=atol/nsyms)[1] atol=2atol

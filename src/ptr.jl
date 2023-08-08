@@ -58,7 +58,7 @@ function Base.iterate(p::PTR{N,T}, state) where {N,T}
 end
 
 # rule interface
-PTR(::Type{T}, ::Val{d}, npt) where {T,d} = PTR{d}(ptrpoints(npt))
+PTR(::Type{T}, ::Val{d}, npt) where {T,d} = PTR{d}(ptrpoints(T, npt))
 function (rule::PTR)(f::F, B::Basis, buffer=nothing) where {F}
     arule = AffineQuad(rule, B)
     return quadsum(arule, f, arule.vol / length(rule), buffer)
