@@ -55,35 +55,25 @@ end
 make_flags(::Int, ::Val{0}) = ()
 function make_flags(npt::Int, ::Val{d}) where {d}
     ndim = Val(d-1)
-    T = NTuple{3,Int}
-    A = Array{T,d-1}(undef, ntuple(_ -> npt, ndim))
-    return (fill!(A, (0,0,0)), make_flags(npt, ndim)...)
+    return (zeros(Int, ntuple(_ -> npt, ndim)), make_flags(npt, ndim)...)
 end
 
 function symptr_rule!!(wsym, flags, x, syms, npt)
     flag, f = flags[begin:end-1], flags[end]
-    nsym, j, k = _symptr_rule!!(wsym, flag, x, syms, npt, 0, ())
+    nsym = _symptr_rule!!(wsym, flag, x, syms, npt, 0, ())
     if nsym != 0
-        f[] = (1, j, k)
+        f[] = 1
     end
     return nsym
 end
 
 # CONJECTURE: this algorithm produces locally convex ibz points, i.e. z is convex, and for
-# each z slice y is convex, and so on
+# each z slice y is convex, and so on. We test this numerically and throw an error if it fails
 function _symptr_rule!!(wsym::Array{T,d}, ::Tuple{}, x, syms, npt, nsym, idx) where {T,d}
     F = eltype(eltype(syms))
-    m = n = 0
     for i_1 in 1:npt
         i = CartesianIndex((i_1, idx...))
-        if (@inbounds isone(wsym[i]))
-            m == 0 && (m = i_1) # entering IBZ (convex)
-        else
-            m == 0 && continue  # waiting for IBZ
-            n == 0 && (n = i_1-1)
-            continue
-            # break    # exiting IBZ (convex)
-        end
+        (@inbounds isone(wsym[i])) || continue
         nsym += 1
         for S in syms
             x_i = SVector{d,eltype(x)}(ntuple(k -> x[i.I[k]], Val(d)))
@@ -108,28 +98,18 @@ function _symptr_rule!!(wsym::Array{T,d}, ::Tuple{}, x, syms, npt, nsym, idx) wh
             end
         end
     end
-    return nsym, m, n
+    return nsym
 end
 
 function _symptr_rule!!(wsym::Array, flags::Tuple, x, syms, npt, nsym, idx)
     flag, f = flags[begin:end-1], flags[end]
-    m = n = 0
     for i in 1:npt
         ntmp = nsym
         ii = (i, idx...)
-        nsym, j, k = _symptr_rule!!(wsym, flag, x, syms, npt, nsym, ii)
-        if ntmp != nsym # interior of IBZ (convex)
-            m == 0 && (m = i)
-            @inbounds f[CartesianIndex(ii)] = (ntmp + 1, j, k)
-        elseif m == 0   # waiting to enter the IBZ
-            continue
-        else            # exiting the IBZ
-            n == 0 && (n = i-1)
-            continue
-            # break # should be safe by convexity
-        end
+        nsym = _symptr_rule!!(wsym, flag, x, syms, npt, nsym, ii)
+        ntmp != nsym && @inbounds f[CartesianIndex(ii)] = ntmp + 1
     end
-    return nsym, m, n
+    return nsym
 end
 
 # rule interface
