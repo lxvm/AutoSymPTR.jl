@@ -120,6 +120,7 @@ struct InplaceIntegrand{F,T<:AbstractArray,Y<:AbstractArray}
     I::T
     Itmp::T
     y::Y
+    ytmp::Y
 end
 
 """
@@ -133,7 +134,7 @@ calculation to read the result, and don't expect it to persist if the same integ
 for another calculation.
 """
 function InplaceIntegrand(f!, result)
-    return InplaceIntegrand(f!, result, similar(result), similar(result, Nothing))
+    return InplaceIntegrand(f!, result, similar(result), similar(result, Nothing), similar(result, Nothing))
 end
 
 function quadsum(rule, f::InplaceIntegrand, vol)
@@ -141,7 +142,7 @@ function quadsum(rule, f::InplaceIntegrand, vol)
     next === nothing && throw(ArgumentError("empty rule"))
     (w, x), state = next
     f.f!(f.y, x)
-    I = f.I .= mymul.(w, f.y)
+    I = f.ytmp .= mymul.(w, f.y)
     next = iterate(rule, state)
     while next !== nothing
         (w, x), state = next
@@ -149,11 +150,12 @@ function quadsum(rule, f::InplaceIntegrand, vol)
         I .+= mymul.(w, f.y)
         next = iterate(rule, state)
     end
-    return I .*= vol
+    return f.I .= I .* vol
 end
 
 function quadsum(rule, f::InplaceIntegrand{F,<:AbstractArray,<:AbstractArray{Nothing}}, vol) where {F}
-    g = InplaceIntegrand(f.f!, f.I, f.Itmp, f.I/vol)
+    y = f.I/vol
+    g = InplaceIntegrand(f.f!, f.I, f.Itmp, y, similar(y))
     return quadsum(rule, g, vol)
 end
 

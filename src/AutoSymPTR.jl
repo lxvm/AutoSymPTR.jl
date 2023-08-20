@@ -95,7 +95,8 @@ function pquadrature(f, dom, ruledef; abstol=nothing, reltol=nothing, maxevals=t
 end
 function pquadrature(f::InplaceIntegrand{F,TI,<:AbstractArray{Nothing}}, dom, ruledef; kws...) where {F,TI}
     d = ndims(dom); T = typeof(float(real(one(eltype(dom)))))
-    g = InplaceIntegrand(f.f!, f.I, f.Itmp, f.I/det(one(SMatrix{d,d,T,d^2})*oneunit(eltype(dom))))
+    y = f.I/det(one(SMatrix{d,d,T,d^2})*oneunit(eltype(dom)))
+    g = InplaceIntegrand(f.f!, f.I, f.Itmp, y, similar(y))
     return pquadrature(g, dom, ruledef; kws...)
 end
 
