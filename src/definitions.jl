@@ -247,7 +247,7 @@ end
 # parallelize the integrand evaluations
 function parquadsum(rule, f::BatchIntegrand, vol, buffer::Vector)
     nthreads = (len=length(buffer)) == 0 ? Threads.nthreads() : min(Threads.nthreads(), len)
-    nthreads == 1 && quadsum(rule, f, vol)
+    nthreads == 1 && return quadsum(rule, f, vol)
 
     n = length(rule)
     l = m = min(n, f.max_batch)
