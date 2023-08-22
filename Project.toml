@@ -1,7 +1,7 @@
 name = "AutoSymPTR"
 uuid = "78a0c066-08f1-49a8-82f0-b29cd485e1d3"
 authors = ["lxvm <lorenzo@vanmunoz.com>"]
-version = "0.4.0"
+version = "0.4.1"
 
 [deps]
 ChunkSplitters = "ae650224-84b6-46f8-82ea-d812ca08434e"
