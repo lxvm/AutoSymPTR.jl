@@ -38,6 +38,14 @@ end
 
 Base.isdone(::PTR, state) = all(isnothing, state)
 piterate(_, ::Nothing...) = nothing
+function piterate(iter, state)
+    next = iterate(iter, state[2])
+    if next === nothing
+        return nothing
+    else
+        return (next[1],), (next,)
+    end
+end
 function piterate(iter, state, states::Vararg{Tuple{A,B},N}) where {A,B,N}
     next = iterate(iter, state[2])
     if next === nothing
