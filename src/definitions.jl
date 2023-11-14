@@ -69,7 +69,7 @@ AffineQuad(rule, B::Basis) = AffineQuad(rule, B.B, Zero(), Zero(), abs(det(B.B))
 # utilities for defining and incrementing the number of ptr points
 nextnpt(a, nmin, nmax, Δn) = min(max(nmin, round(Int, Δn/a)), nmax)
 # quadrature nodes and weights should be unitless
-ptrpoints(npt) = range(0, length=npt, step=1//npt)
+ptrpoints(npt) = range(0//1, length=npt, step=1//npt)
 ptrpoints(T::Type, npt) = float(real(one(T)))*ptrpoints(npt)
 # map a linear index to a Cartesian index
 function ptrindex(npt::Int, ::Val{N}, i::Int) where {N}
