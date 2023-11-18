@@ -9,7 +9,7 @@ using AutoSymPTR: Basis, PTR, MonkhorstPack, pquadrature
 
 using Aqua
 
-Aqua.test_all(AutoSymPTR, project_toml_formatting=false)
+Aqua.test_all(AutoSymPTR)
 
 """
     cube_automorphisms(d::Integer)
