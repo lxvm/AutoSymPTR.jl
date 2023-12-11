@@ -109,9 +109,9 @@ nsyms(rule::MonkhorstPackRule) = isnothing(rule.syms) ? 1 : length(rule.syms)
 
 
 # we expect rules to be iterable and indexable and return (w, x) = rule[i]
-quadsum(rule, f, vol) = vol * sum(((w,x),) -> mymul(w, f(x)), rule)
+quadsum(rule, f::F, vol) where {F} = vol * sum(((w,x),) -> mymul(w, f(x)), rule)
 
-quadsum(rule, f, vol, buffer) = quadsum(rule, f, vol)
+quadsum(rule, f::F, vol, buffer) where {F} = quadsum(rule, f, vol)
 
 
 struct InplaceIntegrand{F,T<:AbstractArray,Y<:AbstractArray}
