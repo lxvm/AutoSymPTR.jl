@@ -67,8 +67,6 @@ function symptr_rule!!(wsym, flags, x, syms, npt)
     return nsym
 end
 
-# CONJECTURE: this algorithm produces locally convex ibz points, i.e. z is convex, and for
-# each z slice y is convex, and so on. We test this numerically and throw an error if it fails
 function _symptr_rule!!(wsym::Array{T,d}, ::Tuple{}, x, syms, npt, nsym, idx) where {T,d}
     F = eltype(eltype(syms))
     for i_1 in 1:npt
