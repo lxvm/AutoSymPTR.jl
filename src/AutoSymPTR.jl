@@ -15,7 +15,7 @@ module AutoSymPTR
 
 using LinearAlgebra: norm, det, checksquare
 using StaticArrays: SVector, SMatrix
-using ChunkSplitters: chunks
+using ChunkSplitters: chunks, index_chunks
 
 export autosymptr, Basis
 

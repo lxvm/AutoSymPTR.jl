@@ -55,6 +55,7 @@ Base.size(aq::AffineQuad) = size(aq.rule)
 # the eltype could change due to the affine transform
 Base.IteratorEltype(::Type{<:AffineQuad{TR}}) where {TR} = Base.IteratorEltype(TR)
 Base.eltype(::Type{<:AffineQuad{TR}}) where {TR} = eltype(TR)
+Base.eachindex(aq::AffineQuad) = eachindex(aq.rule)
 
 function Base.getindex(aq::AffineQuad, i)
     w, x = getindex(aq.rule, i)
@@ -225,21 +226,22 @@ end
 quadsum(rule, f::BatchIntegrand, vol, buffer::Vector) = parquadsum(rule, f, vol, buffer)
 
 function fill_xbuf!(xbuf::Vector, rule, r, off, nchunks)
-    Threads.@threads for (xrange, _) in chunks(r, nchunks)
-        for i in xrange
-            _, x = rule[r[i]]
-            xbuf[r[i]-off] = x
+    Threads.@threads for rchunk in chunks(r; n=nchunks)
+        for ri in rchunk
+            _, x = rule[ri]
+            xbuf[ri-off] = x
         end
     end
 end
 
 function quad_buf!(buffer::Vector, fy::Vector, rule, r, off, nchunks)
-    Threads.@threads for (wrange, ichunk) in chunks(r, nchunks)
-        buffer[ichunk] = zero(eltype(buffer))
-        for i in wrange
-            w, _ = rule[r[i]]
-            buffer[ichunk] += mymul(w, fy[r[i]-off])
+    Threads.@threads for (ichunk, rchunk) in enumerate(chunks(r; n=nchunks))
+        tmp = zero(eltype(buffer))
+        for ri in rchunk
+            w, _ = rule[ri]
+            tmp += mymul(w, fy[ri-off])
         end
+        buffer[ichunk] = tmp
     end
 end
 
@@ -279,3 +281,37 @@ function parquadsum(rule, f::BatchIntegrand, vol, buffer::Vector)
 end
 
 # TODO support BatchIntegrand(InplaceIntegrand)
+
+
+# oop-place function f!(take!(channel), x) that takes an array of x values and outputs an array of results in-place
+struct ChannelIntegrand{F,C<:Channel,K}
+    f::F
+    channel::C
+    kws::K
+end
+ChannelIntegrand(f, ch::Channel; kws...) = ChannelIntegrand(f, ch, kws)
+function getweightsnodes end
+getweightsnodes(aq::AffineQuad) = getweightsnodes(aq.rule)
+quadsum(rule, f::ChannelIntegrand, vol, buffer) = taskquadsum(rule, f.f, f.channel, vol; f.kws...)
+function taskquadsum(rule, f::F, channel, vol; kws...) where {F}
+    tasks = map(chunks(getweightsnodes(rule); kws...)) do rchunk
+        Threads.@spawn begin
+            worker = take!(channel)
+            try
+                next = Iterators.peel(rchunk)
+                next === nothing && error("empty chunk")
+                (w0, x0), rest = next
+                I = mymul(w0, f(worker, x0))
+                for (w, x) in rest
+                    I += mymul(w, f(worker, x))
+                end
+                I
+            catch e
+                rethrow(e)
+            finally
+                put!(channel, worker)
+            end
+        end
+    end
+    sum(fetch, tasks) * vol
+end
