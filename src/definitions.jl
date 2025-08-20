@@ -27,7 +27,7 @@ struct One <: Number end
 Supertype for quadrature rules with the following interface:
 - They are iterable collections of `(w, x)` pairs of weights and nodes
 In order to enable multi-threaded evaluation of the quadrature rule, the objects must also
-- Implement `firstindex`, `lastindex`, `nextind`, and `length` (or `size`) with linear (or Cartesian) indexing
+- Implement `firstindex`, `lastindex`, `nextind`, and `length` (`size` and `axes`) with linear (Cartesian) indexing
 The `IndexStyle` of the rule is used to decide which type of indexing to use.
 """
 abstract type AbstractQuadratureRule end
@@ -63,23 +63,3 @@ Base.@propagate_inbounds Base.getindex(p::ProductArray{T,N}, idx::CartesianIndex
 Base.IteratorSize(::Type{<:ProductArray{T,N}}) where {T,N} = Base.HasShape{N}()
 Base.size(p::ProductArray, dim) = length(p.xs[dim])
 Base.axes(p::ProductArray) = map(eachindex, p.xs)
-
-#=
-# map a linear index to a Cartesian index
-function ptrindex(npt::Int, ::Val{N}, i::Int) where {N}
-    pow = cumprod(ntuple(n->n==1 ? 1 : npt, Val(N)))
-    pow[1] <= i <= npt*pow[N] || throw(BoundsError(npt, i))
-    idx = ntuple(n -> rem(div(i-1, pow[n]), npt)+1, Val(N))
-    return CartesianIndex(idx)
-end
-# map a Cartesian index to a linear index
-function ptrindex(npt::Int, i::CartesianIndex)
-    idx = 0
-    for j in reverse(i.I)
-        1 <= j <= npt || throw(BoundsError(p, i.I))
-        idx *= npt
-        idx += j-1
-    end
-    return idx+1
-end
-=#

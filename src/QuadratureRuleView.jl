@@ -14,30 +14,30 @@ Base.view(rule::QuadratureRuleView, indices) = QuadratureRuleView(rule.rule, rul
 
 Base.firstindex(rule::QuadratureRuleView) = firstindex(rule.indices)
 Base.lastindex(rule::QuadratureRuleView) = lastindex(rule.indices)
-Base.length(rule::QuadratureRuleView) = length(rule.indices)
 
 Base.eltype(::Type{<:QuadratureRuleView{Q}}) where {Q} = eltype(Q)
-Base.IndexStyle(::Type{<:QuadratureRuleView{Q}}) where {Q} = Base.IndexStyle(TR)
+Base.IndexStyle(::Type{<:QuadratureRuleView{Q}}) where {Q} = Base.IndexLinear()
 Base.@propagate_inbounds function Base.getindex(rule::QuadratureRuleView, i::Int)
     ixs = Base.IndexStyle(typeof(rule))
     if ixs isa IndexLinear
         @inbounds rule.rule[rule.indices[i]]
     elseif ixs isa IndexCartesian
-        @inbounds rule.rule[ptrindex(size(rule.rule), rule.indices[i])]
+        @inbounds rule.rule[CartesianIndices(axes(rule.rule))[rule.indices[i]]]
     else
         error("unknown index style")
     end
 end
 
+Base.IteratorSize(::Type{<:QuadratureRuleView}) = Base.HasLength()
+Base.length(rule::QuadratureRuleView) = length(rule.indices)
 function Base.iterate(qv::QuadratureRuleView)
     ixs = Base.IndexStyle(typeof(qv.rule))
     isempty(qv.indices) && return nothing
     i, f = if ixs isa IndexLinear
         first(qv.indices), last(qv.indices)
     elseif ixs isa IndexCartesian
-        o = CartesianIndex(ntuple(n -> firstindex(qv.rule, n), Val{ndims(qv.rule)}()))
-        o = o - one(o)
-        _lin2cart(size(qv.rule), first(qv.indices)) + o, _lin2cart(size(qv.rule), last(qv.indices)) + o
+        inds = CartesianIndices(axes(qv.rule))
+        inds[first(qv.indices)], inds[last(qv.indices)]
     else
         error("unknown index style")
     end
@@ -49,11 +49,4 @@ function Base.iterate(qv::QuadratureRuleView, (state, f))
     ind = nextind(qv.rule, state)
     item = @inbounds qv.rule[ind]
     return item, (ind, f)
-end
-
-function _lin2cart(sz::NTuple{N,Int}, i::Int) where {N}
-    pow = cumprod(ntuple(n->n==1 ? 1 : sz[n-1], Val(N)))
-    pow[1] <= i <= prod(sz) || throw(BoundsError(sz, i))
-    idx = ntuple(n -> rem(div(i-1, pow[n]), sz[n])+1, Val(N))
-    return CartesianIndex(idx)
 end

@@ -26,20 +26,18 @@ end
 PTR(::Type{T}, ::Val{d}, npt, w=convert(T, 1//npt)^d) where {T,d} = PTR{d}(ptrpoints(T, npt), w)
 
 # indexing interface
-Base.@propagate_inbounds function Base.getindex(p::PTR, args...)
-    return p.w, getindex(p.x, args...)
-end
-Base.@propagate_inbounds Base.getindex(p::PTR, i::CartesianIndex) = getindex(p, Tuple(i)...)
-Base.IndexStyle(::Type{<:PTR}) = IndexCartesian()
-Base.ndims(::PTR{d}) where {d} = d
-Base.length(p::PTR) = length(p.x)
+Base.@propagate_inbounds Base.getindex(p::PTR, args...) = (p.w, getindex(p.x, args...))
 Base.firstindex(p::PTR) = 1
 Base.lastindex(p::PTR) = length(p)
+
+# quadrature rule multi-threading interface
+Base.IndexStyle(::Type{<:PTR}) = IndexCartesian()
 Base.axes(p::PTR, args...) = axes(p.x, args...)
 Base.nextind(p::PTR, i::CartesianIndex) = nextind(p.x, i)
 
 # iterator interface
 Base.IteratorSize(::Type{<:PTR{N}}) where {N} = Base.HasShape{N}()
+Base.length(p::PTR) = length(p.x)
 Base.size(p::PTR, args...) = size(p.x, args...)
 Base.eltype(::Type{<:PTR{N,T,X,W}}) where {N,T,X,W} = Tuple{W,SVector{N,T}}
 function Base.iterate(p::PTR, args...)

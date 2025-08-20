@@ -75,9 +75,7 @@ end
 
 # this is the p-adaptive convergence loop
 # the cache is a vector of rules of different orders
-# the (optional) buffer is a workspace for the rule to store function
-# evaluations or accumulators for parallel evaluation
-function p_adapt(f::F, dom, ruledef, cache::Vector, keepmost, abstol, reltol, maxevals, nrm, buffer) where {F}
+function p_adapt(f::F, dom, ruledef, cache::Vector, keepmost, abstol, reltol, maxevals, nrm) where {F}
     # unroll first two rule evaluations to get right types
     next = iterate(cache)
     next === nothing && throw(ArgumentError("rule cache is empty"))
@@ -85,13 +83,13 @@ function p_adapt(f::F, dom, ruledef, cache::Vector, keepmost, abstol, reltol, ma
     _rule, state = nextrule!(cache, state, keepmost, rule_, ruledef)
 
     if f isa InplaceIntegrand # rule evaluators should write inplace to f.I
-        int_ = f.Itmp .= rule_(f, dom, buffer)
-        _int = _rule(f, dom, buffer)
+        int_ = f.Itmp .= rule_(f, dom)
+        _int = _rule(f, dom)
         int_ .-= _int
         err = nrm(int_)
     else
-        int_ = rule_(f, dom, buffer)
-        _int = _rule(f, dom, buffer)
+        int_ = rule_(f, dom)
+        _int = _rule(f, dom)
         err = nrm(int_ - _int)
     end
     numevals = length(rule_) + length(_rule)
@@ -115,11 +113,11 @@ function p_adapt(f::F, dom, ruledef, cache::Vector, keepmost, abstol, reltol, ma
         _rule, state = nextrule!(cache, state, keepmost, rule_, ruledef)
         if f isa InplaceIntegrand
             int_ .= _int
-            int_ .-= _rule(f, dom, buffer) # _int updated inplace
+            int_ .-= _rule(f, dom) # _int updated inplace
             err = nrm(int_)
         else
             int_ = _int
-            _int = _rule(f, dom, buffer)
+            _int = _rule(f, dom)
             err = nrm(int_ - _int)
         end
         numevals += length(_rule)
@@ -129,10 +127,10 @@ function p_adapt(f::F, dom, ruledef, cache::Vector, keepmost, abstol, reltol, ma
 end
 
 
-function pquadrature(f, dom, ruledef; abstol=nothing, reltol=nothing, maxevals=typemax(Int64), norm=norm, cache=nothing, keepmost::Integer=2, buffer=nothing)
+function pquadrature(f, dom, ruledef; abstol=nothing, reltol=nothing, maxevals=typemax(Int64), norm=norm, cache=nothing, keepmost::Integer=2)
     d = ndims(dom); T = typeof(float(real(one(eltype(dom)))))
     cach = (cache===nothing) ? alloc_cache(T, Val(d), ruledef) : cache
-    return p_adapt(f, dom, ruledef, cach, keepmost, abstol, reltol, maxevals, norm, buffer)
+    return p_adapt(f, dom, ruledef, cach, keepmost, abstol, reltol, maxevals, norm)
 end
 function pquadrature(f::InplaceIntegrand{F,TI,<:AbstractArray{Nothing}}, dom, ruledef; kws...) where {F,TI}
     d = ndims(dom); T = typeof(float(real(one(eltype(dom)))))
@@ -156,7 +154,7 @@ end
 
 
 """
-    autosymptr(f, B::AbstractMatrix, [syms=nothing]; atol=0, rtol=sqrt(eps()), maxevals=typemax(Int64), buffer=nothing)
+    autosymptr(f, B::AbstractMatrix, [syms=nothing]; atol=0, rtol=sqrt(eps()), maxevals=typemax(Int64))
 
 Computes the integral of `f` to within the specified tolerances and returns a
 tuple `(I, E, numevals, rules)` containing the estimated integral, the estimated
@@ -165,16 +163,13 @@ domain needs to be mapped back to the full domain by the caller, since for
 array-valued integrands this depends on the representation of the integrand
 under the action of the symmetries.
 
-Note that if a vector buffer is provided to store integrand evaluations, the integrand
-evaluations will be parallelized and it will be assumed that the integrand is threadsafe.
-
 !!! note "Convergence depends on periodicity"
     If the routine takes a long time to return, double check that the period of
     the function `f` along the basis vectors in the columns of `B` is consistent.
 """
-function autosymptr(f, dom::Basis; syms=nothing, a=1.0, rule=nothing, abstol=nothing, reltol=nothing, maxevals=typemax(Int64), norm=norm, cache = nothing, keepmost::Integer=2, buffer=nothing)
+function autosymptr(f, dom::Basis; syms=nothing, a=1.0, rule=nothing, abstol=nothing, reltol=nothing, maxevals=typemax(Int64), norm=norm, cache = nothing, keepmost::Integer=2)
     rule_ = (rule===nothing) ? MonkhorstPackRule(syms, a) : rule
-    return pquadrature(f, dom, rule_, abstol = abstol, reltol = reltol, norm = norm, maxevals = maxevals, cache = cache, keepmost=keepmost, buffer = buffer)
+    return pquadrature(f, dom, rule_, abstol = abstol, reltol = reltol, norm = norm, maxevals = maxevals, cache = cache, keepmost=keepmost)
 end
 
 end

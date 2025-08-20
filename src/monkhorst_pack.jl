@@ -12,6 +12,8 @@ end
 Base.@propagate_inbounds Base.getindex(rule::MonkhorstPack, i::Int) = rule.wx[i]
 Base.firstindex(rule::MonkhorstPack) = firstindex(rule.wx)
 Base.lastindex(rule::MonkhorstPack) = lastindex(rule.wx)
+
+# quadrature rule multi-threading interface
 Base.IndexStyle(::Type{<:MonkhorstPack}) = IndexLinear()
 Base.nextind(rule::MonkhorstPack, i::Int) = nextind(rule.wx, i)
 
