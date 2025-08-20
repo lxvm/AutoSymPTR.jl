@@ -25,7 +25,7 @@ public evalrule
 include("definitions.jl")
 include("inplace.jl")
 include("batch.jl")
-include("channel.jl")
+include("tasksafe.jl")
 include("ptr.jl")
 include("monkhorst_pack.jl")
 include("AffineQuad.jl")
