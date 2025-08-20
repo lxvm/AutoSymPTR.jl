@@ -2,14 +2,18 @@
 # computes the value of the integral over the IBZ
 
 # nodes and weights
-struct MonkhorstPack{d,W,X}
+struct MonkhorstPack{d,W,X} <: AbstractQuadratureRule
     npt::Int64
     nsyms::Int64
     wx::Vector{Tuple{W,SVector{d,X}}}
 end
 
 # indexing interface
-Base.getindex(rule::MonkhorstPack, i::Int) = rule.wx[i]
+Base.@propagate_inbounds Base.getindex(rule::MonkhorstPack, i::Int) = rule.wx[i]
+Base.firstindex(rule::MonkhorstPack) = firstindex(rule.wx)
+Base.lastindex(rule::MonkhorstPack) = lastindex(rule.wx)
+Base.IndexStyle(::Type{<:MonkhorstPack}) = IndexLinear()
+Base.nextind(rule::MonkhorstPack, i::Int) = nextind(rule.wx, i)
 
 # iteration interface
 Base.eltype(::Type{MonkhorstPack{d,T}}) where {d,T} = Tuple{Int64,SVector{d,T}}
@@ -111,29 +115,17 @@ function _symptr_rule!!(wsym::Array, flags::Tuple, x, syms, npt, nsym, idx)
 end
 
 # rule interface
-function MonkhorstPack(::Type{T}, ndim::Val{d}, npt, syms) where {d,T}
+function MonkhorstPack(::Type{T}, ndim::Val{d}, npt, syms, _w=convert(T, 1//npt)^d) where {d,T}
     u = ptrpoints(T, npt)
     wsym, flag, nsym = symptr_rule(npt, ndim, syms)
-    wx = Vector{Tuple{eltype(wsym),SVector{d,eltype(u)}}}(undef, nsym)
+    wx = Vector{Tuple{typeof(first(wsym)*_w),SVector{d,eltype(u)}}}(undef, nsym)
     n = 0
     for i in CartesianIndices(wsym)
         n < nsym || break
         @inbounds w = wsym[i]
         iszero(w) && continue
-        @inbounds wx[n += 1] = (w, ntuple(j -> u[i[j]], ndim))
+        @inbounds wx[n += 1] = (w*_w, ntuple(j -> u[i[j]], ndim))
     end
     return MonkhorstPack(npt, length(syms), wx)
 end
 
-function (r::MonkhorstPackRule)(::Type{T}, v::Val{d}) where {T,d}
-    return MonkhorstPack(T, v, r.n₀, r.syms)
-end
-
-function nextrule(p::MonkhorstPack{d,T}, r::MonkhorstPackRule) where {d,T}
-    return MonkhorstPack(T, Val(d), p.npt+r.Δn, r.syms)
-end
-
-function (rule::MonkhorstPack{d})(f::F, B::Basis, buffer=nothing) where {d,F}
-    arule = AffineQuad(rule, B)
-    return quadsum(arule, f, arule.vol / (rule.npt^d * rule.nsyms), buffer)
-end

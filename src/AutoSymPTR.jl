@@ -16,13 +16,54 @@ module AutoSymPTR
 using LinearAlgebra: norm, det, checksquare
 using StaticArrays: SVector, SMatrix
 using ChunkSplitters: chunks, index_chunks
+import ChunkSplitters: is_chunkable
 
 export autosymptr, Basis
 
+public evalrule
+
 include("definitions.jl")
+include("inplace.jl")
+include("batch.jl")
+include("channel.jl")
 include("ptr.jl")
 include("monkhorst_pack.jl")
+include("AffineQuad.jl")
+include("QuadratureRuleView.jl")
 
+
+struct MonkhorstPackRule{S}
+    syms::S     # collection of point group symmetries
+    n₀::Int64   # the initial number of grid points to use
+    Δn::Int64   # the number of grid points to add with each increment
+    MonkhorstPackRule{S}(syms::S, n₀::Int64, Δn::Int64) where {S} = new{S}(syms, n₀, Δn)
+end
+
+# we choose the initial guess to be 6/a and the increment log(10)/a
+function MonkhorstPackRule(syms::S, a::Real, nmin::Integer=50, nmax::Integer=1000, n₀=6.0, Δn=log(10)) where {S}
+    n0 = nextnpt(a, nmin, nmax, n₀)
+    dn = nextnpt(a, nmin, nmax, Δn)
+    return MonkhorstPackRule{S}(syms, n0, dn)
+end
+
+# utilities for defining and incrementing the number of ptr points
+nextnpt(a, nmin, nmax, Δn) = min(max(nmin, round(Int, Δn/a)), nmax)
+
+function (r::MonkhorstPackRule)(::Type{T}, v::Val{d}) where {T,d}
+    return MonkhorstPack(T, v, r.n₀, r.syms)
+end
+
+function nextrule(p::MonkhorstPack{d,T}, r::MonkhorstPackRule) where {d,T}
+    return MonkhorstPack(T, Val(d), p.npt+r.Δn, r.syms)
+end
+
+function (r::MonkhorstPackRule{Nothing})(::Type{T}, v::Val{d}) where {T,d}
+    return PTR(T, v, r.n₀)
+end
+
+function nextrule(p::PTR{d,T}, r::MonkhorstPackRule) where {d,T}
+    return PTR(T, Val(d), length(p.x)+r.Δn)
+end
 
 function nextrule!(cache::Vector, state, keepmost, prev, ruledef)
     length(cache) < state || return @inbounds(cache[state]), state+1

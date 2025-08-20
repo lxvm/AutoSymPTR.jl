@@ -1,6 +1,10 @@
 # quadrature rule for npt^d PTR using the full grid
 # all weights are assumed to be unity
 # it is an immutable array
+# quadrature nodes and weights should be unitless
+ptrpoints(npt) = range(0//1, length=npt, step=1//npt)
+ptrpoints(T::Type, npt) = float(real(one(T)))*ptrpoints(npt)
+
 """
     PTR{d}(x::AbstractVector{T}) where {d,T}
 
@@ -8,74 +12,40 @@ Stores a `d` dimensional Cartesian product grid of `SVector{d,T}`.
 Similar to `Iterators.product(ntuple(n->x, d)...)`.
 Uses the same number of grid points per dimension.
 """
-struct PTR{N,T,X} <: AbstractArray{Tuple{One,SVector{N,T}},N}
+struct PTR{N,T,X,W} <: AbstractQuadratureRule
     x::X
-    function PTR{N}(x::X) where {N,X<:AbstractVector}
+    w::W
+    function PTR{N}(x::X, w=step(x)^d) where {N,X<:AbstractRange}
         @assert N isa Integer
         @assert N >= 1
         @assert length(x) > 0
-        new{N,eltype(x),X}(x)
+        p = ProductArray(ntuple(_->x, Val{N}()))
+        new{N,eltype(x),typeof(p),typeof(w)}(p, w)
     end
 end
+PTR(::Type{T}, ::Val{d}, npt, w=convert(T, 1//npt)^d) where {T,d} = PTR{d}(ptrpoints(T, npt), w)
 
-# Array interface
-Base.size(p::PTR) = (l=length(p.x); ntuple(n->l, Val(ndims(p))))
-function Base.getindex(p::PTR{N,T}, idx::Vararg{Int,N}) where {N,T}
-    return One(), SVector{N,T}(ntuple(n -> p.x[idx[n]], Val(N)))
+# indexing interface
+Base.@propagate_inbounds function Base.getindex(p::PTR, args...)
+    return p.w, getindex(p.x, args...)
 end
+Base.@propagate_inbounds Base.getindex(p::PTR, i::CartesianIndex) = getindex(p, Tuple(i)...)
+Base.IndexStyle(::Type{<:PTR}) = IndexCartesian()
+Base.ndims(::PTR{d}) where {d} = d
+Base.length(p::PTR) = length(p.x)
+Base.firstindex(p::PTR) = 1
+Base.lastindex(p::PTR) = length(p)
+Base.axes(p::PTR, args...) = axes(p.x, args...)
+Base.nextind(p::PTR, i::CartesianIndex) = nextind(p.x, i)
 
 # iterator interface
 Base.IteratorSize(::Type{<:PTR{N}}) where {N} = Base.HasShape{N}()
-Base.size(p::PTR, _) = length(p.x)
-# iteration with a Cartesian index state (extremely similar to Iterators.product)
-function Base.iterate(p::PTR{N,T}) where {N,T}
-    next = iterate(p.x)
+Base.size(p::PTR, args...) = size(p.x, args...)
+Base.eltype(::Type{<:PTR{N,T,X,W}}) where {N,T,X,W} = Tuple{W,SVector{N,T}}
+function Base.iterate(p::PTR, args...)
+    next = Base.iterate(p.x, args...)
     next === nothing && return nothing
-    val   = ntuple(i->next[1],Val(N))
-    state = ntuple(i->next,Val(N))
-    return (One(), SVector{N,T}(val)), state
+    x, state = next
+    return (p.w, x), state
 end
 
-Base.isdone(::PTR, state) = all(isnothing, state)
-piterate(_, ::Nothing...) = nothing
-function piterate(iter, state)
-    next = iterate(iter, state[2])
-    if next === nothing
-        return nothing
-    else
-        return (next[1],), (next,)
-    end
-end
-function piterate(iter, state, states::Vararg{Tuple{A,B},N}) where {A,B,N}
-    next = iterate(iter, state[2])
-    if next === nothing
-        restnext = piterate(iter, states...)
-        restnext === nothing && return nothing
-        _, nextstates = restnext
-        next = iterate(iter)
-        next === nothing && return nothing
-        return (next[1], ntuple(i->nextstates[i][1],Val(N))...), (next, nextstates...)
-    else
-        return (next[1], ntuple(i->states[i][1],Val(N))...), (next, states...)
-    end
-end
-function Base.iterate(p::PTR{N,T}, state) where {N,T}
-    next = piterate(p.x, state...)
-    next === nothing && return nothing
-    return ((One(), SVector{N,T}(next[1])), next[2])
-end
-
-# rule interface
-PTR(::Type{T}, ::Val{d}, npt) where {T,d} = PTR{d}(ptrpoints(T, npt))
-function (rule::PTR)(f::F, B::Basis, buffer=nothing) where {F}
-    arule = AffineQuad(rule, B)
-    return quadsum(arule, f, arule.vol / length(rule), buffer)
-end
-
-function (r::MonkhorstPackRule{Nothing})(::Type{T}, v::Val{d}) where {T,d}
-    return PTR(T, v, r.n₀)
-end
-
-function nextrule(p::PTR{d,T}, r::MonkhorstPackRule) where {d,T}
-    return PTR(T, Val(d), length(p.x)+r.Δn)
-end
