@@ -117,7 +117,7 @@ function _symptr_rule!!(wsym::Array, flags::Tuple, x, syms, npt, nsym, idx)
 end
 
 # rule interface
-function MonkhorstPack(::Type{T}, ndim::Val{d}, npt, syms, _w=convert(T, 1//npt)^d) where {d,T}
+function MonkhorstPack(::Type{T}, ndim::Val{d}, npt, syms, _w=convert(T, 1//npt)^d/length(syms)) where {d,T}
     u = ptrpoints(T, npt)
     wsym, flag, nsym = symptr_rule(npt, ndim, syms)
     wx = Vector{Tuple{typeof(first(wsym)*_w),SVector{d,eltype(u)}}}(undef, nsym)
