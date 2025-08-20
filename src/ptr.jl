@@ -15,12 +15,13 @@ Uses the same number of grid points per dimension.
 struct PTR{N,T,X,W} <: AbstractQuadratureRule
     x::X
     w::W
+    npt::Int
     function PTR{N}(x::X, w=step(x)^d) where {N,X<:AbstractRange}
         @assert N isa Integer
         @assert N >= 1
         @assert length(x) > 0
         p = ProductArray(ntuple(_->x, Val{N}()))
-        new{N,eltype(x),typeof(p),typeof(w)}(p, w)
+        new{N,eltype(x),typeof(p),typeof(w)}(p, w, length(x))
     end
 end
 PTR(::Type{T}, ::Val{d}, npt, w=convert(T, 1//npt)^d) where {T,d} = PTR{d}(ptrpoints(T, npt), w)

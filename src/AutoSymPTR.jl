@@ -62,7 +62,7 @@ function (r::MonkhorstPackRule{Nothing})(::Type{T}, v::Val{d}) where {T,d}
 end
 
 function nextrule(p::PTR{d,T}, r::MonkhorstPackRule) where {d,T}
-    return PTR(T, Val(d), length(p.x)+r.Δn)
+    return PTR(T, Val(d), size(p.npt, 1)+r.Δn)
 end
 
 function nextrule!(cache::Vector, state, keepmost, prev, ruledef)
@@ -83,13 +83,13 @@ function p_adapt(f::F, dom, ruledef, cache::Vector, keepmost, abstol, reltol, ma
     _rule, state = nextrule!(cache, state, keepmost, rule_, ruledef)
 
     if f isa InplaceIntegrand # rule evaluators should write inplace to f.I
-        int_ = f.Itmp .= rule_(f, dom)
-        _int = _rule(f, dom)
+        int_ = f.Itmp .= rule_(f)
+        _int = _rule(f)
         int_ .-= _int
         err = nrm(int_)
     else
-        int_ = rule_(f, dom)
-        _int = _rule(f, dom)
+        int_ = AffineQuad(rule_, dom)(f)
+        _int = AffineQuad(_rule, dom)(f)
         err = nrm(int_ - _int)
     end
     numevals = length(rule_) + length(_rule)
@@ -117,7 +117,7 @@ function p_adapt(f::F, dom, ruledef, cache::Vector, keepmost, abstol, reltol, ma
             err = nrm(int_)
         else
             int_ = _int
-            _int = _rule(f, dom)
+            _int = AffineQuad(_rule, dom)(f)
             err = nrm(int_ - _int)
         end
         numevals += length(_rule)
